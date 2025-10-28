@@ -770,6 +770,10 @@ const isText = (filename) => {
                                             <span>{{ student.progress.submitted }}/{{ student.progress.total_classwork }} submitted</span>
                                             <span>{{ student.progress.graded }} graded</span>
                                         </div>
+                                        <div class="flex items-center justify-between text-xs mt-1">
+                                            <span class="text-yellow-600">{{ student.progress.pending || 0 }} pending</span>
+                                            <span class="text-red-600">{{ student.progress.not_submitted || 0 }} not submitted</span>
+                                        </div>
                                     </div>
                                     
                                     <!-- Average Grade -->
@@ -809,8 +813,24 @@ const isText = (filename) => {
 
                     <!-- Class Record Tab -->
                     <div v-if="activeTab === 'class-record'">
-                        <h2 class="text-xl font-bold text-gray-900 mb-4">Class Record</h2>
-                        <p class="text-gray-500">Class record will be displayed here</p>
+                        <div class="bg-white rounded-lg shadow-md p-8 text-center">
+                            <div class="max-w-md mx-auto">
+                                <svg class="w-20 h-20 mx-auto text-green-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                                <h2 class="text-2xl font-bold text-gray-900 mb-2">Class Record</h2>
+                                <p class="text-gray-600 mb-6">View and print the official class record for this course.</p>
+                                <Link
+                                    :href="route('teacher.courses.class-record', course.id)"
+                                    class="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                    </svg>
+                                    Open Class Record
+                                </Link>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

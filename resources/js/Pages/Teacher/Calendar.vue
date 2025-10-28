@@ -110,7 +110,7 @@ const updateCalendarEvents = () => {
         
         return {
             id: e.id,
-            title: e.title,
+            title: e.is_deadline ? '📌 ' + e.title : e.title,
             start: eventStart,
             allDay: !e.time,
             backgroundColor: bgColor,
@@ -435,7 +435,10 @@ const formatTime = (timeString) => {
                                 <div class="flex items-start justify-between">
                                     <div class="flex-1">
                                         <div class="flex items-center gap-2">
-                                            <h4 class="font-semibold text-sm text-gray-900">{{ event.title }}</h4>
+                                            <h4 class="font-semibold text-sm text-gray-900">
+                                                <span v-if="event.is_deadline" class="mr-1">📌</span>
+                                                {{ event.title }}
+                                            </h4>
                                             <span v-if="event.is_deadline" class="px-2 py-0.5 bg-orange-100 text-orange-800 text-xs rounded">
                                                 Deadline
                                             </span>

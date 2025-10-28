@@ -125,8 +125,9 @@ class CourseViewController extends Controller
                     
                     // Calculate progress
                     $totalClasswork = $classwork->where('has_submission', true)->count();
-                    $submittedCount = $submissions->where('status', '!=', 'draft')->count();
-                    $gradedCount = $submissions->whereIn('status', ['graded', 'returned'])->count();
+                    // Count unique classwork items that have been submitted (not draft status)
+                    $submittedCount = $submissions->where('status', '!=', 'draft')->pluck('classwork_id')->unique()->count();
+                    $gradedCount = $submissions->whereIn('status', ['graded', 'returned'])->pluck('classwork_id')->unique()->count();
                     
                     // Calculate average grade
                     $gradedSubmissions = $submissions->whereIn('status', ['graded', 'returned'])->where('grade', '!=', null);
@@ -151,6 +152,10 @@ class CourseViewController extends Controller
                             ];
                         });
                     
+                    // Calculate pending and not submitted counts
+                    $pendingCount = $submissions->where('status', 'submitted')->count();
+                    $notSubmittedCount = $totalClasswork - $submittedCount;
+                    
                     return [
                         'id' => $student->id,
                         'name' => $student->first_name . ' ' . $student->last_name,
@@ -161,6 +166,8 @@ class CourseViewController extends Controller
                             'total_classwork' => $totalClasswork,
                             'submitted' => $submittedCount,
                             'graded' => $gradedCount,
+                            'pending' => $pendingCount,
+                            'not_submitted' => $notSubmittedCount,
                             'completion_rate' => $totalClasswork > 0 ? round(($submittedCount / $totalClasswork) * 100, 2) : 0,
                             'average_grade' => $averageGrade,
                         ],

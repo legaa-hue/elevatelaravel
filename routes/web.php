@@ -41,9 +41,15 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::patch('/events/{event}/date', [\App\Http\Controllers\Admin\EventController::class, 'updateDate'])->name('events.updateDate');
     Route::delete('/events/{event}', [\App\Http\Controllers\Admin\EventController::class, 'destroy'])->name('events.destroy');
     
-    Route::get('/class-record', function () {
-        return Inertia::render('Admin/ClassRecord');
-    })->name('class-record');
+    // Class Record / Gradebooks
+    Route::get('/class-record', [\App\Http\Controllers\Admin\ClassRecordController::class, 'index'])->name('class-record');
+    Route::get('/class-record/{course}/grade-sheet', [\App\Http\Controllers\Admin\GradeSheetController::class, 'show'])->name('class-record.grade-sheet');
+    Route::get('/class-record/{course}/grade-sheet/pdf', [\App\Http\Controllers\Admin\GradeSheetController::class, 'viewPdf'])->name('class-record.grade-sheet.pdf');
+    Route::get('/class-record/{course}/grade-sheet/download', [\App\Http\Controllers\Admin\GradeSheetController::class, 'downloadPdf'])->name('class-record.grade-sheet.download');
+    
+    // Admin can access gradebooks (use teacher controller)
+    Route::get('/courses/{course}/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'show'])->name('courses.gradebook');
+    Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'saveGrades'])->name('courses.gradebook.save');
     
     // Course Management
     Route::get('/courses', [\App\Http\Controllers\Admin\CoursesController::class, 'index'])->name('courses.index');
@@ -126,6 +132,9 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::get('/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'index'])->name('gradebook');
     Route::get('/courses/{course}/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'show'])->name('courses.gradebook');
     Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'saveGrades'])->name('courses.gradebook.save');
+    
+    // Class Record for specific course
+    Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');
     
     // Calendar
     Route::get('/calendar', [\App\Http\Controllers\Teacher\CalendarController::class, 'index'])->name('calendar');

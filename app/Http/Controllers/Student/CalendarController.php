@@ -11,11 +11,14 @@ class CalendarController extends Controller
 {
     public function index()
     {
-        // Get events that are for students or both
+        $user = auth()->user();
+        
+        // Get events that are for students or both (including due dates)
         $events = Event::where(function($query) {
                 $query->where('target_audience', 'students')
                     ->orWhere('target_audience', 'both');
             })
+            ->with('user')
             ->orderBy('date', 'asc')
             ->orderBy('time', 'asc')
             ->get()
@@ -24,11 +27,12 @@ class CalendarController extends Controller
                     'id' => $event->id,
                     'title' => $event->title,
                     'description' => $event->description,
-                    'date' => $event->date,
+                    'date' => $event->date->format('Y-m-d'),
                     'time' => $event->time,
                     'category' => $event->category,
+                    'is_deadline' => $event->is_deadline ?? ($event->category === 'deadline'),
                     'color' => $event->color,
-                    'created_by' => $event->user ? $event->user->first_name . ' ' . $event->user->last_name : 'Admin',
+                    'created_by' => $event->user ? $event->user->first_name . ' ' . $event->user->last_name : 'System',
                 ];
             });
 

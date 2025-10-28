@@ -57,6 +57,28 @@ class EventController extends Controller
             'target_audience' => 'nullable|in:teachers,students,both',
         ]);
 
+        // Set visibility based on target_audience if not explicitly set
+        if (!isset($validated['visibility'])) {
+            if (isset($validated['target_audience'])) {
+                // Map target_audience to appropriate visibility
+                switch ($validated['target_audience']) {
+                    case 'teachers':
+                        $validated['visibility'] = 'teachers';
+                        break;
+                    case 'students':
+                        $validated['visibility'] = 'all';
+                        break;
+                    case 'both':
+                        $validated['visibility'] = 'all';
+                        break;
+                    default:
+                        $validated['visibility'] = 'admin_only';
+                }
+            } else {
+                $validated['visibility'] = 'admin_only';
+            }
+        }
+
         $event = Event::create([
             'user_id' => auth()->id(),
             'title' => $validated['title'],
@@ -65,7 +87,7 @@ class EventController extends Controller
             'description' => $validated['description'],
             'category' => $validated['category'],
             'color' => $validated['color'],
-            'visibility' => $validated['visibility'] ?? 'admin_only',
+            'visibility' => $validated['visibility'],
             'target_audience' => $validated['target_audience'] ?? 'both',
         ]);
 
@@ -99,6 +121,28 @@ class EventController extends Controller
             'visibility' => 'nullable|in:admin_only,teachers,all',
             'target_audience' => 'nullable|in:teachers,students,both',
         ]);
+
+        // Set visibility based on target_audience if not explicitly set
+        if (!isset($validated['visibility'])) {
+            if (isset($validated['target_audience'])) {
+                // Map target_audience to appropriate visibility
+                switch ($validated['target_audience']) {
+                    case 'teachers':
+                        $validated['visibility'] = 'teachers';
+                        break;
+                    case 'students':
+                        $validated['visibility'] = 'all';
+                        break;
+                    case 'both':
+                        $validated['visibility'] = 'all';
+                        break;
+                    default:
+                        $validated['visibility'] = 'admin_only';
+                }
+            } else {
+                $validated['visibility'] = 'admin_only';
+            }
+        }
 
         $oldData = $event->toArray();
         $event->update($validated);

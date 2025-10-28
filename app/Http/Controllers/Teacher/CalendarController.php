@@ -30,13 +30,10 @@ class CalendarController extends Controller
         $events = Event::where(function ($query) use ($user) {
             // Teacher's own events
             $query->where('user_id', $user->id)
-                // Or admin events visible to teachers or both
+                // Or admin/system events for teachers or both
                 ->orWhere(function ($q) {
-                    $q->whereIn('visibility', ['teachers', 'all'])
-                      ->where(function ($subQ) {
-                          $subQ->where('target_audience', 'teachers')
-                               ->orWhere('target_audience', 'both');
-                      });
+                    $q->where('target_audience', 'teachers')
+                      ->orWhere('target_audience', 'both');
                 });
         })
         ->with(['user', 'course'])
@@ -56,7 +53,7 @@ class CalendarController extends Controller
                 'target_audience' => $event->target_audience,
                 'course_id' => $event->course_id,
                 'course_name' => $event->course ? $event->course->title : null,
-                'created_by' => $event->user->first_name . ' ' . $event->user->last_name,
+                'created_by' => $event->user ? ($event->user->first_name . ' ' . $event->user->last_name) : 'System',
                 'is_own' => $event->user_id === $user->id,
             ];
         });

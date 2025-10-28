@@ -33,9 +33,11 @@ class GradebookController extends Controller
 
     public function show(Course $course)
     {
-        // Check if user is the teacher or joined teacher
-        if ($course->teacher_id !== auth()->id() && !$course->teachers->contains(auth()->id())) {
-            abort(403, 'Unauthorized');
+        // Check if user is the teacher, joined teacher, or admin
+        if (auth()->user()->role !== 'admin' && 
+            $course->teacher_id !== auth()->id() && 
+            !$course->teachers->contains(auth()->id())) {
+            abort(403, 'Unauthorized. Teacher or Admin access only.');
         }
 
         // Get enrolled students
@@ -64,9 +66,9 @@ class GradebookController extends Controller
 
     public function saveGrades(Request $request, Course $course)
     {
-        // Check if user is the teacher
-        if ($course->teacher_id !== auth()->id()) {
-            abort(403, 'Unauthorized');
+        // Check if user is the teacher or admin
+        if (auth()->user()->role !== 'admin' && $course->teacher_id !== auth()->id()) {
+            abort(403, 'Unauthorized. Teacher or Admin access only.');
         }
 
         $validated = $request->validate([

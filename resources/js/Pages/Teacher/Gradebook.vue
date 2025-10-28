@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
+import AdminLayout from '@/Layouts/AdminLayout.vue';
 
 const props = defineProps({
     course: Object,
@@ -9,6 +10,14 @@ const props = defineProps({
     classworks: Array,
     gradebook: { type: Object, default: null }
 });
+
+// Get current user to determine layout
+const page = usePage();
+const currentUser = computed(() => page.props.auth.user);
+const isAdmin = computed(() => currentUser.value?.role === 'admin');
+
+// Use appropriate layout based on user role
+const LayoutComponent = computed(() => isAdmin.value ? AdminLayout : TeacherLayout);
 
 // Main settings
 const midtermPercentage = ref(50);
@@ -823,81 +832,40 @@ const getCustomGrade = (studentId, tableId, columnId, subcolumnId) => {
 <template>
     <Head :title="`Gradebook - ${course.title}`" />
 
-    <TeacherLayout>
-        <div class="space-y-6">
-            <!-- Course Header -->
-            <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 md:p-8 text-white">
-                <div class="flex justify-between items-start">
-                    <div>
-                        <h1 class="text-2xl md:text-3xl font-bold">Course: {{ course.title }} - {{ course.section }}</h1>
-                        <div class="mt-2 flex flex-wrap items-center gap-4 text-sm text-blue-100">
-                            <span>Section: {{ course.section }}</span>
-                            <span>•</span>
-                            <span>Join Code: {{ course.join_code }}</span>
-                            <span 
-                                class="px-3 py-1 rounded-full text-xs font-semibold"
-                                :class="course.status === 'active' ? 'bg-green-500 text-white' : 'bg-gray-400 text-white'"
+    <component :is="LayoutComponent">
+        <div class="max-w-[1800px] mx-auto space-y-6 p-6">
+            <!-- Simple Header with Back Navigation -->
+            <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                <div class="p-4 border-b border-gray-200 bg-white">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center gap-4">
+                            <Link
+                                :href="route('teacher.courses.show', course.id)"
+                                class="flex items-center gap-2 text-gray-600 hover:text-gray-900 transition"
                             >
-                                {{ course.status }}
-                            </span>
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+                                </svg>
+                                Back to Course
+                            </Link>
+                            <div class="h-6 w-px bg-gray-300"></div>
+                            <h1 class="text-xl font-bold text-gray-900">{{ course.title }} - Gradebook</h1>
                         </div>
+                        <Link
+                            :href="route('teacher.courses.class-record', course.id)"
+                            class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                            </svg>
+                            Class Record
+                        </Link>
                     </div>
                 </div>
             </div>
 
-            <!-- Tabs -->
-            <div class="bg-white rounded-lg shadow-md">
-                <div class="border-b border-gray-200">
-                    <nav class="flex -mb-px overflow-x-auto">
-                        <Link
-                            :href="route('teacher.courses.show', course.id)"
-                            :class="[
-                                'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
-                                'text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                            ]"
-                        >
-                            Stream
-                        </Link>
-                        <Link
-                            :href="route('teacher.courses.show', course.id)"
-                            :class="[
-                                'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
-                                'text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                            ]"
-                        >
-                            Classwork
-                        </Link>
-                        <Link
-                            :href="route('teacher.courses.show', course.id)"
-                            :class="[
-                                'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
-                                'text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                            ]"
-                        >
-                            People
-                        </Link>
-                        <button
-                            :class="[
-                                'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
-                                'border-b-2 border-red-900 text-red-900'
-                            ]"
-                        >
-                            Gradebook
-                        </button>
-                        <Link
-                            :href="route('teacher.courses.show', course.id)"
-                            :class="[
-                                'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
-                                'text-gray-600 hover:text-gray-900 hover:border-gray-300'
-                            ]"
-                        >
-                            Class Record
-                        </Link>
-                    </nav>
-                </div>
-
-                <!-- Gradebook Content -->
-                <div class="p-6">
+            <!-- Gradebook Content -->
+            <div class="space-y-6">
 
             <!-- Grading Period Percentage Settings -->
             <div class="bg-white rounded-lg shadow-md p-6">
@@ -1653,10 +1621,9 @@ const getCustomGrade = (studentId, tableId, columnId, subcolumnId) => {
                     </div>
                 </div>
             </div>
-                </div>
             </div>
         </div>
-    </TeacherLayout>
+    </component>
 </template>
 
 <style scoped>

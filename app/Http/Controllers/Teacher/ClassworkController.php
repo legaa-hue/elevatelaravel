@@ -173,12 +173,16 @@ class ClassworkController extends Controller
                 $dueDateTime = new \DateTime($classwork->due_date);
                 Event::create([
                     'user_id' => Auth::id(),
+                    'course_id' => $course->id,
                     'title' => $classwork->title . ' - Due',
                     'date' => $dueDateTime->format('Y-m-d'),
                     'time' => $dueDateTime->format('H:i:s'),
                     'description' => "Type: " . ucfirst($classwork->type) . "\n" . ($classwork->description ?? ''),
                     'category' => 'deadline',
                     'color' => '#ef4444', // Red color for deadlines
+                    'is_deadline' => true,
+                    'target_audience' => 'students',
+                    'visibility' => 'all',
                 ]);
             }
 

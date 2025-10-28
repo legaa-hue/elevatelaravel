@@ -59,6 +59,34 @@ const calculateTotalFromRubric = () => {
     }, 0);
     
     gradingForm.grade = total;
+    // Auto-correct if exceeds max
+    if (gradingForm.grade > props.classwork.points) {
+        gradingForm.grade = props.classwork.points;
+    }
+};
+
+const validateRubricScore = (criteriaId, maxPoints) => {
+    // Auto-correct rubric score if it exceeds the maximum points for that criteria
+    const score = gradingForm.rubric_scores[criteriaId];
+    if (score > maxPoints) {
+        gradingForm.rubric_scores[criteriaId] = maxPoints;
+    }
+    if (score < 0) {
+        gradingForm.rubric_scores[criteriaId] = 0;
+    }
+    // Recalculate total after validation
+    calculateTotalFromRubric();
+};
+
+const validateGradeInput = () => {
+    // Auto-correct grade if it exceeds the maximum points
+    if (gradingForm.grade > props.classwork.points) {
+        gradingForm.grade = props.classwork.points;
+    }
+    // Ensure grade is not negative
+    if (gradingForm.grade < 0) {
+        gradingForm.grade = 0;
+    }
 };
 
 const submitGrade = () => {
@@ -96,11 +124,15 @@ const getTypeBorderClass = (type) => {
     return colors[type] || 'border-t-4 border-blue-500';
 };
 
-const openFilePreview = async (filename) => {
+const openFilePreview = async (attachment) => {
+    // Handle both string filenames and attachment objects
+    const filename = typeof attachment === 'object' ? attachment.name : attachment;
+    const filepath = typeof attachment === 'object' ? `/storage/${attachment.path}` : `/storage/submissions/${attachment}`;
+    
     // Set file info
     previewFile.value = {
         name: filename,
-        path: `/storage/submissions/${filename}`
+        path: filepath
     };
     showFilePreview.value = true;
     isLoadingFile.value = true;
@@ -195,7 +227,10 @@ const closeFilePreview = () => {
 };
 
 const getFileExtension = (filename) => {
-    return filename.split('.').pop().toLowerCase();
+    // Handle if filename is an object (attachment with name property)
+    const name = typeof filename === 'object' ? filename.name : filename;
+    if (!name || typeof name !== 'string') return '';
+    return name.split('.').pop().toLowerCase();
 };
 
 const isImage = (filename) => {
@@ -378,7 +413,7 @@ const getFileIcon = (filename) => {
                                             class="w-full flex items-center gap-2 bg-gray-50 px-3 py-2 rounded-lg hover:bg-gray-100 transition text-left"
                                         >
                                             <span class="text-xl">{{ getFileIcon(attachment) }}</span>
-                                            <span class="text-sm text-gray-700 flex-1">{{ attachment }}</span>
+                                            <span class="text-sm text-gray-700 flex-1">{{ typeof attachment === 'object' ? attachment.name : attachment }}</span>
                                             <svg class="w-4 h-4 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
@@ -405,7 +440,8 @@ const getFileIcon = (filename) => {
                                                     :max="criteria.points"
                                                     min="0"
                                                     step="0.5"
-                                                    @input="calculateTotalFromRubric"
+                                                    @input="validateRubricScore(criteria.id, criteria.points)"
+                                                    @blur="validateRubricScore(criteria.id, criteria.points)"
                                                     class="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg"
                                                     placeholder="0"
                                                 />
@@ -422,6 +458,8 @@ const getFileIcon = (filename) => {
                                     <input
                                         id="grade"
                                         v-model.number="gradingForm.grade"
+                                        @input="validateGradeInput"
+                                        @blur="validateGradeInput"
                                         type="number"
                                         :max="classwork.points"
                                         min="0"

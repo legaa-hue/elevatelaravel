@@ -11,7 +11,9 @@ class ClassworkSubmission extends Model
         'classwork_id',
         'student_id',
         'submission_content',
+        'link',
         'attachments',
+        'quiz_answers',
         'rubric_scores',
         'grade',
         'feedback',
@@ -23,6 +25,7 @@ class ClassworkSubmission extends Model
 
     protected $casts = [
         'attachments' => 'array',
+        'quiz_answers' => 'array',
         'rubric_scores' => 'array',
         'grade' => 'decimal:2',
         'submitted_at' => 'datetime',

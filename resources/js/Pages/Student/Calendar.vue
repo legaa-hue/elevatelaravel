@@ -81,18 +81,14 @@ const calendar = ref(null);
 
 // Update calendar events
 function updateCalendarEvents() {
-    if (calendar.value) {
-        const calendarApi = calendar.value.getApi();
-        calendarApi.removeAllEvents();
-        calendarApi.addEventSource(formatEventsForCalendar(filteredEvents.value));
-    }
+    calendarOptions.value.events = formatEventsForCalendar(filteredEvents.value);
 }
 
 // Format events for FullCalendar
 function formatEventsForCalendar(events) {
     return events.map(event => ({
         id: event.id,
-        title: event.title,
+        title: event.is_deadline || event.category === 'deadline' ? '📌 ' + event.title : event.title,
         start: event.time ? `${event.date}T${event.time}` : event.date,
         allDay: !event.time,
         backgroundColor: event.color,
@@ -100,7 +96,8 @@ function formatEventsForCalendar(events) {
         extendedProps: {
             description: event.description,
             category: event.category,
-            created_by: event.created_by
+            created_by: event.created_by,
+            is_deadline: event.is_deadline || event.category === 'deadline'
         }
     }));
 }
@@ -239,7 +236,10 @@ watch([filterCategory, searchQuery], () => {
                                 :style="{ borderColor: event.color }"
                                 @click="selectedEvent = event; showEventModal = true"
                             >
-                                <h4 class="font-semibold text-sm text-gray-900">{{ event.title }}</h4>
+                                <h4 class="font-semibold text-sm text-gray-900">
+                                    <span v-if="event.is_deadline || event.category === 'deadline'" class="mr-1">📌</span>
+                                    {{ event.title }}
+                                </h4>
                                 <p class="text-xs text-gray-600 mt-1">{{ formatDate(event.date) }} • {{ formatTime(event.time) }}</p>
                                 <span class="inline-block mt-1 px-2 py-0.5 text-xs rounded" :style="{ backgroundColor: event.color, color: 'white' }">
                                     {{ getCategoryLabel(event.category) }}
@@ -266,7 +266,10 @@ watch([filterCategory, searchQuery], () => {
                 </button>
 
                 <div v-if="selectedEvent">
-                    <h2 class="text-2xl font-bold text-gray-900 mb-4">{{ selectedEvent.title }}</h2>
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">
+                        <span v-if="selectedEvent.is_deadline || selectedEvent.category === 'deadline'" class="mr-2">📌</span>
+                        {{ selectedEvent.title }}
+                    </h2>
                     
                     <div class="space-y-3">
                         <div class="flex items-center gap-2 text-gray-600">

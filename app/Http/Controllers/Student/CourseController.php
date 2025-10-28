@@ -168,8 +168,10 @@ class CourseController extends Controller
                         'id' => $submission->id,
                         'status' => $submission->status,
                         'content' => $submission->submission_content,
+                        'submission_content' => $submission->submission_content,
                         'link' => $submission->link,
                         'attachments' => $submission->attachments,
+                        'quiz_answers' => $submission->quiz_answers,
                         'grade' => $submission->grade,
                         'feedback' => $submission->feedback,
                         'submitted_at' => $submission->submitted_at?->format('M d, Y h:i A'),
@@ -231,6 +233,7 @@ class CourseController extends Controller
             'link' => 'nullable|url',
             'attachments' => 'nullable|array',
             'attachments.*' => 'file|max:10240', // 10MB max per file
+            'quiz_answers' => 'nullable|array',
         ]);
 
         // Handle file uploads
@@ -247,6 +250,45 @@ class CourseController extends Controller
             }
         }
 
+        // Auto-grade quiz if applicable
+        $autoGrade = null;
+        $autoGradedStatus = 'submitted';
+        $needsManualGrading = false;
+        
+        if ($classwork->type === 'quiz' && isset($validated['quiz_answers'])) {
+            $quizQuestions = $classwork->quizQuestions;
+            $totalPoints = 0;
+            $earnedPoints = 0;
+            
+            foreach ($quizQuestions as $index => $question) {
+                $totalPoints += $question->points;
+                $studentAnswer = $validated['quiz_answers'][$index] ?? '';
+                
+                // Check if question type requires manual grading (essay)
+                if (in_array(strtolower($question->type), ['essay', 'long answer', 'short answer'])) {
+                    $needsManualGrading = true;
+                    continue;
+                }
+                
+                // Auto-grade objective questions (multiple choice, true/false, etc.)
+                if ($question->correct_answer) {
+                    // Normalize answers for comparison (trim whitespace, case-insensitive)
+                    $correctAnswer = trim(strtolower($question->correct_answer));
+                    $studentAnswerNormalized = trim(strtolower($studentAnswer));
+                    
+                    if ($correctAnswer === $studentAnswerNormalized) {
+                        $earnedPoints += $question->points;
+                    }
+                }
+            }
+            
+            // If no questions need manual grading, auto-grade completely
+            if (!$needsManualGrading && $totalPoints > 0) {
+                $autoGrade = $earnedPoints;
+                $autoGradedStatus = 'graded';
+            }
+        }
+
         // Create or update submission
         $submission = ClassworkSubmission::updateOrCreate(
             [
@@ -257,15 +299,26 @@ class CourseController extends Controller
                 'submission_content' => $validated['content'] ?? '',
                 'link' => $validated['link'] ?? null,
                 'attachments' => $uploadedFiles,
-                'status' => 'submitted',
+                'quiz_answers' => $validated['quiz_answers'] ?? null,
+                'grade' => $autoGrade,
+                'status' => $autoGradedStatus,
                 'submitted_at' => now(),
+                'graded_at' => $autoGrade !== null ? now() : null,
             ]
         );
 
         // Notify teacher about the submission
         NotificationService::notifyTeacherAboutSubmission($classwork, auth()->user());
 
-        return redirect()->back()->with('success', 'Work submitted successfully!');
+        // Prepare success message
+        $successMessage = 'Work submitted successfully!';
+        if ($autoGrade !== null) {
+            $successMessage = "Quiz submitted and auto-graded! Your score: {$autoGrade}/{$totalPoints} points.";
+        } elseif ($needsManualGrading) {
+            $successMessage = 'Quiz submitted! Your teacher will grade the essay questions.';
+        }
+
+        return redirect()->back()->with('success', $successMessage);
     }
 
     public function unsubmitClasswork($classworkId)
