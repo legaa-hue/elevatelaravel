@@ -93,11 +93,19 @@ const totalQuizPoints = computed(() => {
 // Watch for type changes to reset rubric/quiz data
 watch(() => classworkForm.type, (newType) => {
     if (newType === 'quiz') {
+        // Quizzes don't have rubric criteria or file attachments
         rubricCriteria.value = [];
+        fileAttachments.value = []; // Clear files for quizzes
         if (quizQuestions.value.length === 0) {
             addQuizQuestion();
         }
+    } else if (newType === 'lesson') {
+        // Lessons don't have rubric criteria or due dates
+        quizQuestions.value = [];
+        rubricCriteria.value = [];
+        classworkForm.due_date = null;
     } else {
+        // Activities and assignments have rubric criteria but no quiz
         quizQuestions.value = [];
         if (rubricCriteria.value.length === 0) {
             addRubricCriteria();
@@ -245,21 +253,37 @@ const submitClasswork = () => {
     // Set has_submission to false for lessons
     if (classworkForm.type === 'lesson') {
         classworkForm.has_submission = false;
-    }
-
-    // Add rubric criteria or quiz questions to form
-    if (classworkForm.type === 'quiz') {
+        // Lessons don't have rubric criteria or quiz questions
+        classworkForm.rubric_criteria = [];
+        classworkForm.quiz_questions = [];
+        classworkForm.points = 0;
+    } else if (classworkForm.type === 'quiz') {
+        // Quizzes have quiz questions but no rubric criteria or file attachments
         classworkForm.quiz_questions = quizQuestions.value;
         classworkForm.rubric_criteria = [];
         classworkForm.points = totalQuizPoints.value;
+        // Clear any attachments for quizzes
+        fileAttachments.value = [];
     } else {
+        // Activities and assignments have rubric criteria but no quiz questions
         classworkForm.rubric_criteria = rubricCriteria.value;
         classworkForm.quiz_questions = [];
         classworkForm.points = totalRubricPoints.value;
     }
 
-    // Add file names to attachments
-    classworkForm.attachments = fileAttachments.value.map(file => file.name);
+    // Add actual file objects to attachments for upload
+    // IMPORTANT: Inertia needs the actual File objects
+    classworkForm.attachments = fileAttachments.value;
+
+    console.log('Submitting classwork:', {
+        type: classworkForm.type,
+        title: classworkForm.title,
+        due_date: classworkForm.due_date,
+        has_submission: classworkForm.has_submission,
+        attachments_count: fileAttachments.value.length,
+        rubric_criteria_count: classworkForm.rubric_criteria.length,
+        quiz_questions_count: classworkForm.quiz_questions.length,
+    });
 
     if (editingClasswork.value) {
         // Update existing classwork
@@ -274,11 +298,28 @@ const submitClasswork = () => {
         });
     } else {
         // Create new classwork
+        // When posting with files, Inertia automatically converts to FormData
         classworkForm.post(route('teacher.courses.classwork.store', props.course.id), {
             preserveScroll: true,
+            forceFormData: true, // Force FormData for file uploads
             onSuccess: () => {
+                const typeName = classworkForm.type.charAt(0).toUpperCase() + classworkForm.type.slice(1);
                 closeClassworkModal();
+                alert(`${typeName} created successfully!`);
             },
+            onError: (errors) => {
+                console.error('Failed to create classwork:', errors);
+                // Show error message to user
+                let errorMessage = 'Failed to create classwork:\n';
+                if (typeof errors === 'object') {
+                    Object.keys(errors).forEach(key => {
+                        errorMessage += `${key}: ${errors[key]}\n`;
+                    });
+                } else {
+                    errorMessage += errors;
+                }
+                alert(errorMessage);
+            }
         });
     }
 };
@@ -938,8 +979,8 @@ const isText = (filename) => {
                                             </button>
                                         </div>
 
-                                        <!-- Rubric Criteria Section (for non-quiz types) -->
-                                        <div v-else class="border-2 border-indigo-200 rounded-lg p-4 bg-indigo-50">
+                                        <!-- Rubric Criteria Section (for activities and assignments only, not lessons) -->
+                                        <div v-if="!isQuizType && classworkForm.type !== 'lesson'" class="border-2 border-indigo-200 rounded-lg p-4 bg-indigo-50">
                                             <div class="flex items-center justify-between mb-4">
                                                 <h4 class="font-semibold text-gray-900 flex items-center gap-2">
                                                     <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -998,8 +1039,8 @@ const isText = (filename) => {
                                             </button>
                                         </div>
 
-                                        <!-- Due Date -->
-                                        <div>
+                                        <!-- Due Date (not for lessons) -->
+                                        <div v-if="classworkForm.type !== 'lesson'">
                                             <label for="due_date" class="block text-sm font-medium text-gray-700 mb-1">
                                                 Due Date
                                             </label>
@@ -1011,8 +1052,8 @@ const isText = (filename) => {
                                             />
                                         </div>
 
-                                        <!-- File Attachments -->
-                                        <div>
+                                        <!-- File Attachments (not for quizzes) -->
+                                        <div v-if="classworkForm.type !== 'quiz'">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
                                                 Attachments
                                             </label>

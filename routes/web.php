@@ -144,6 +144,13 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
         return Inertia::render('Teacher/Reports');
     })->name('reports');
     
+    // Notifications
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
+    Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+    Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    
     // Profile & Settings
     Route::get('/profile', function () {
         return Inertia::render('Teacher/Profile');
@@ -162,10 +169,18 @@ Route::middleware(['auth', 'verified', 'student'])->prefix('student')->name('stu
     Route::post('/courses/join', [\App\Http\Controllers\Student\CourseController::class, 'join'])->name('courses.join');
     Route::get('/joined-courses', [\App\Http\Controllers\Student\CourseController::class, 'joinedCourses'])->name('joined-courses');
     Route::get('/courses/{id}', [\App\Http\Controllers\Student\CourseController::class, 'show'])->name('courses.show');
-    Route::post('/classworks/{classwork}/submit', [\App\Http\Controllers\Student\CourseController::class, 'submitClasswork'])->name('classworks.submit');
+    Route::post('/classwork/{classwork}/submit', [\App\Http\Controllers\Student\CourseController::class, 'submitClasswork'])->name('classwork.submit');
+    Route::delete('/classwork/{classwork}/unsubmit', [\App\Http\Controllers\Student\CourseController::class, 'unsubmitClasswork'])->name('classwork.unsubmit');
     
     // Calendar
     Route::get('/calendar', [\App\Http\Controllers\Student\CalendarController::class, 'index'])->name('calendar');
+    
+    // Notifications
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{id}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.read');
+    Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
+    Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
     
     // Placeholder routes for student pages
     Route::get('/courses', function () {

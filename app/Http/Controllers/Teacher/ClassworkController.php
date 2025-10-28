@@ -9,6 +9,7 @@ use App\Models\Course;
 use App\Models\Event;
 use App\Models\RubricCriteria;
 use App\Models\QuizQuestion;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -52,6 +53,17 @@ class ClassworkController extends Controller
             abort(403, 'Unauthorized access to this course');
         }
 
+        // Log incoming request data for debugging
+        logger()->info('Classwork creation request', [
+            'type' => $request->input('type'),
+            'title' => $request->input('title'),
+            'due_date' => $request->input('due_date'),
+            'has_files' => $request->hasFile('attachments'),
+            'file_count' => $request->hasFile('attachments') ? count($request->file('attachments')) : 0,
+            'rubric_criteria_count' => $request->has('rubric_criteria') ? count($request->input('rubric_criteria', [])) : 0,
+            'quiz_questions_count' => $request->has('quiz_questions') ? count($request->input('quiz_questions', [])) : 0,
+        ]);
+
         $validated = $request->validate([
             'type' => 'required|in:lesson,assignment,quiz,activity',
             'title' => 'required|string|max:255',
@@ -59,23 +71,46 @@ class ClassworkController extends Controller
             'due_date' => 'nullable|date',
             'points' => 'nullable|integer|min:0',
             'attachments' => 'nullable|array',
-            'has_submission' => 'boolean',
-            'status' => 'in:active,draft,archived',
+            'attachments.*' => 'sometimes|file|max:10240', // Allow file uploads, 10MB max
+            'has_submission' => 'nullable|boolean',
+            'status' => 'nullable|in:active,draft,archived',
             'color_code' => 'nullable|string|max:7',
             'rubric_criteria' => 'nullable|array',
-            'rubric_criteria.*.description' => 'required|string',
-            'rubric_criteria.*.points' => 'required|integer|min:0',
+            'rubric_criteria.*.description' => 'required_with:rubric_criteria|string',
+            'rubric_criteria.*.points' => 'required_with:rubric_criteria|integer|min:0',
             'quiz_questions' => 'nullable|array',
-            'quiz_questions.*.type' => 'required|in:multiple_choice,true_false,short_answer,essay,identification,enumeration',
-            'quiz_questions.*.question' => 'required|string',
+            'quiz_questions.*.type' => 'required_with:quiz_questions|in:multiple_choice,true_false,short_answer,essay,identification,enumeration',
+            'quiz_questions.*.question' => 'required_with:quiz_questions|string',
             'quiz_questions.*.options' => 'nullable|array',
             'quiz_questions.*.correct_answer' => 'nullable|string',
             'quiz_questions.*.correct_answers' => 'nullable|array',
-            'quiz_questions.*.points' => 'required|integer|min:0',
+            'quiz_questions.*.points' => 'required_with:quiz_questions|integer|min:0',
         ]);
+
+        // Handle file uploads
+        $uploadedFiles = [];
+        if ($request->hasFile('attachments')) {
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('classwork', 'public');
+                $uploadedFiles[] = [
+                    'name' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'size' => $file->getSize(),
+                    'type' => $file->getMimeType(),
+                ];
+            }
+            $validated['attachments'] = $uploadedFiles;
+        } else {
+            $validated['attachments'] = [];
+        }
 
         $validated['course_id'] = $course->id;
         $validated['created_by'] = Auth::id();
+        
+        // Set default status if not provided
+        if (!isset($validated['status'])) {
+            $validated['status'] = 'active';
+        }
         
         // Set default color based on type if not provided
         if (!isset($validated['color_code'])) {
@@ -96,6 +131,14 @@ class ClassworkController extends Controller
         DB::beginTransaction();
         try {
             $classwork = Classwork::create($validated);
+
+            logger()->info('Classwork created successfully', [
+                'id' => $classwork->id,
+                'type' => $classwork->type,
+                'title' => $classwork->title,
+                'due_date' => $classwork->due_date,
+                'attachments_count' => is_array($classwork->attachments) ? count($classwork->attachments) : 0,
+            ]);
 
             // Create rubric criteria for non-quiz types
             if ($validated['type'] !== 'quiz' && isset($validated['rubric_criteria'])) {
@@ -127,25 +170,35 @@ class ClassworkController extends Controller
 
             // Auto-create calendar event if there's a due date
             if ($classwork->due_date) {
+                $dueDateTime = new \DateTime($classwork->due_date);
                 Event::create([
-                    'title' => $classwork->title,
+                    'user_id' => Auth::id(),
+                    'title' => $classwork->title . ' - Due',
+                    'date' => $dueDateTime->format('Y-m-d'),
+                    'time' => $dueDateTime->format('H:i:s'),
                     'description' => "Type: " . ucfirst($classwork->type) . "\n" . ($classwork->description ?? ''),
-                    'start_date' => $classwork->due_date,
-                    'end_date' => $classwork->due_date,
-                    'is_deadline' => true,
-                    'created_by' => Auth::id(),
+                    'category' => 'deadline',
+                    'color' => '#ef4444', // Red color for deadlines
                 ]);
             }
 
             DB::commit();
 
+            // Notify students about new classwork/material
+            NotificationService::notifyStudentsAboutClasswork($classwork);
+
             // Return an Inertia-friendly redirect to the course view so the frontend receives a valid Inertia response
-            return redirect()->route('teacher.courses.show', $course->id)->with('success', 'Classwork created.');
+            return redirect()->route('teacher.courses.show', $course->id)
+                ->with('success', ucfirst($classwork->type) . ' created successfully!');
         } catch (\Exception $e) {
             DB::rollBack();
             // Log the exception and redirect back with an error message so Inertia receives a proper response
-            logger()->error('Failed to create classwork', ['error' => $e->getMessage()]);
-            return redirect()->back()->with('error', 'Failed to create classwork.');
+            logger()->error('Failed to create classwork', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'request_data' => $request->except(['attachments']), // Don't log file data
+            ]);
+            return redirect()->back()->withErrors(['error' => 'Failed to create classwork: ' . $e->getMessage()]);
         }
     }
 
@@ -174,15 +227,35 @@ class ClassworkController extends Controller
             'due_date' => 'nullable|date',
             'points' => 'nullable|integer|min:0',
             'attachments' => 'nullable|array',
+            'attachments.*' => 'nullable|file|max:10240',
             'has_submission' => 'boolean',
             'status' => 'in:active,draft,archived',
             'color_code' => 'nullable|string|max:7',
         ]);
 
-    $classwork->update($validated);
+        // Handle file uploads for update
+        if ($request->hasFile('attachments')) {
+            $existingFiles = $classwork->attachments ?? [];
+            $uploadedFiles = [];
+            
+            foreach ($request->file('attachments') as $file) {
+                $path = $file->store('classwork', 'public');
+                $uploadedFiles[] = [
+                    'name' => $file->getClientOriginalName(),
+                    'path' => $path,
+                    'size' => $file->getSize(),
+                    'type' => $file->getMimeType(),
+                ];
+            }
+            
+            // Merge with existing files
+            $validated['attachments'] = array_merge($existingFiles, $uploadedFiles);
+        }
 
-    // Return Inertia-friendly redirect
-    return redirect()->route('teacher.courses.show', $course->id)->with('success', 'Classwork updated.');
+        $classwork->update($validated);
+
+        // Return Inertia-friendly redirect
+        return redirect()->route('teacher.courses.show', $course->id)->with('success', 'Classwork updated.');
     }
 
     /**

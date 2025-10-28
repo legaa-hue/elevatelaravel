@@ -7,6 +7,7 @@ use App\Models\Course;
 use App\Models\JoinedCourse;
 use App\Models\Classwork;
 use App\Models\ClassworkSubmission;
+use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -124,7 +125,7 @@ class CourseController extends Controller
 
         // Get all classwork for this course
         $classworks = Classwork::where('course_id', $id)
-            ->with(['creator:id,first_name,last_name'])
+            ->with(['creator:id,first_name,last_name', 'rubricCriteria', 'quizQuestions'])
             ->orderBy('created_at', 'desc')
             ->get()
             ->map(function($classwork) {
@@ -142,6 +143,21 @@ class CourseController extends Controller
                     'due_date_raw' => $classwork->due_date,
                     'points' => $classwork->points,
                     'attachments' => $classwork->attachments,
+                    'rubric_criteria' => $classwork->rubricCriteria->map(function($criteria) {
+                        return [
+                            'description' => $criteria->description,
+                            'points' => $criteria->points,
+                            'order' => $criteria->order,
+                        ];
+                    }),
+                    'quiz_questions' => $classwork->quizQuestions->map(function($question) {
+                        return [
+                            'type' => $question->type,
+                            'question' => $question->question,
+                            'points' => $question->points,
+                            'order' => $question->order,
+                        ];
+                    }),
                     'has_submission' => $classwork->has_submission,
                     'status' => $classwork->status,
                     'color_code' => $classwork->color_code ?? $classwork->color,
@@ -152,6 +168,7 @@ class CourseController extends Controller
                         'id' => $submission->id,
                         'status' => $submission->status,
                         'content' => $submission->submission_content,
+                        'link' => $submission->link,
                         'attachments' => $submission->attachments,
                         'grade' => $submission->grade,
                         'feedback' => $submission->feedback,
@@ -200,8 +217,18 @@ class CourseController extends Controller
             return back()->withErrors(['error' => 'You are not enrolled in this course.']);
         }
 
+        // Check if already graded - can't resubmit if graded
+        $existingSubmission = ClassworkSubmission::where('classwork_id', $classwork->id)
+            ->where('student_id', auth()->id())
+            ->first();
+
+        if ($existingSubmission && $existingSubmission->status === 'graded' && $existingSubmission->grade !== null) {
+            return back()->withErrors(['error' => 'Cannot edit a graded submission.']);
+        }
+
         $validated = $request->validate([
             'content' => 'nullable|string',
+            'link' => 'nullable|url',
             'attachments' => 'nullable|array',
             'attachments.*' => 'file|max:10240', // 10MB max per file
         ]);
@@ -228,12 +255,49 @@ class CourseController extends Controller
             ],
             [
                 'submission_content' => $validated['content'] ?? '',
+                'link' => $validated['link'] ?? null,
                 'attachments' => $uploadedFiles,
                 'status' => 'submitted',
                 'submitted_at' => now(),
             ]
         );
 
-        return back()->with('success', 'Assignment submitted successfully!');
+        // Notify teacher about the submission
+        NotificationService::notifyTeacherAboutSubmission($classwork, auth()->user());
+
+        return redirect()->back()->with('success', 'Work submitted successfully!');
+    }
+
+    public function unsubmitClasswork($classworkId)
+    {
+        $classwork = Classwork::findOrFail($classworkId);
+        
+        // Verify student is enrolled in the course
+        $enrolled = JoinedCourse::where('user_id', auth()->id())
+            ->where('course_id', $classwork->course_id)
+            ->where('role', 'Student')
+            ->exists();
+
+        if (!$enrolled) {
+            return back()->withErrors(['error' => 'You are not enrolled in this course.']);
+        }
+
+        $submission = ClassworkSubmission::where('classwork_id', $classwork->id)
+            ->where('student_id', auth()->id())
+            ->first();
+
+        if (!$submission) {
+            return back()->withErrors(['error' => 'No submission found.']);
+        }
+
+        // Can't unsubmit if already graded
+        if ($submission->status === 'graded' || $submission->grade !== null) {
+            return back()->withErrors(['error' => 'Cannot unsubmit a graded work.']);
+        }
+
+        // Delete the submission
+        $submission->delete();
+
+        return redirect()->back()->with('success', 'Submission removed. You can now resubmit.');
     }
 }

@@ -30,9 +30,13 @@ class CalendarController extends Controller
         $events = Event::where(function ($query) use ($user) {
             // Teacher's own events
             $query->where('user_id', $user->id)
-                // Or admin events visible to teachers or all
+                // Or admin events visible to teachers or both
                 ->orWhere(function ($q) {
-                    $q->whereIn('visibility', ['teachers', 'all']);
+                    $q->whereIn('visibility', ['teachers', 'all'])
+                      ->where(function ($subQ) {
+                          $subQ->where('target_audience', 'teachers')
+                               ->orWhere('target_audience', 'both');
+                      });
                 });
         })
         ->with(['user', 'course'])

@@ -13,8 +13,8 @@ class CalendarController extends Controller
     {
         // Get events that are for students or both
         $events = Event::where(function($query) {
-                $query->where('target_audience', 'Students')
-                    ->orWhere('target_audience', 'Both');
+                $query->where('target_audience', 'students')
+                    ->orWhere('target_audience', 'both');
             })
             ->orderBy('date', 'asc')
             ->orderBy('time', 'asc')
