@@ -37,22 +37,56 @@ class DashboardController extends Controller
             ->map(function($joinedCourse) use ($user) {
                 $course = $joinedCourse->course;
                 
-                // Calculate progress metrics (placeholder - will be updated with real data)
-                $completedTasks = 0;
-                $pendingTasks = 0;
-                $totalTasks = 0;
-                $currentGrade = 'N/A';
+                // Calculate accurate progress metrics
+                $totalTasks = $course->classworks()
+                    ->whereIn('type', ['assignment', 'quiz', 'activity'])
+                    ->where('status', 'active')
+                    ->count();
                 
-                // TODO: Implement real task counting and grade calculation
-                // For now, use sample data
-                $completedTasks = rand(5, 15);
-                $totalTasks = rand(15, 30);
+                // Count submitted tasks (graded, returned, or submitted status)
+                $completedTasks = \App\Models\ClassworkSubmission::whereIn('classwork_id', 
+                    $course->classworks()
+                        ->whereIn('type', ['assignment', 'quiz', 'activity'])
+                        ->where('status', 'active')
+                        ->pluck('id')
+                )
+                ->where('student_id', $user->id)
+                ->whereIn('status', ['submitted', 'graded', 'returned'])
+                ->count();
+                
                 $pendingTasks = $totalTasks - $completedTasks;
                 $progress = $totalTasks > 0 ? round(($completedTasks / $totalTasks) * 100) : 0;
                 
-                // Sample grade
-                $grades = ['90', '85', '88', '92', '87', 'N/A'];
-                $currentGrade = $grades[array_rand($grades)];
+                // Calculate current grade from graded submissions
+                $gradedSubmissions = \App\Models\ClassworkSubmission::whereIn('classwork_id', 
+                    $course->classworks()
+                        ->whereIn('type', ['assignment', 'quiz', 'activity'])
+                        ->where('status', 'active')
+                        ->pluck('id')
+                )
+                ->where('student_id', $user->id)
+                ->whereIn('status', ['graded', 'returned'])
+                ->whereNotNull('grade')
+                ->with('classwork')
+                ->get();
+                
+                $currentGrade = 'N/A';
+                if ($gradedSubmissions->count() > 0) {
+                    $totalGrade = 0;
+                    $totalPoints = 0;
+                    
+                    foreach ($gradedSubmissions as $submission) {
+                        $classwork = $submission->classwork;
+                        if ($classwork && $classwork->points > 0) {
+                            $totalGrade += ($submission->grade / $classwork->points) * 100;
+                            $totalPoints++;
+                        }
+                    }
+                    
+                    if ($totalPoints > 0) {
+                        $currentGrade = round($totalGrade / $totalPoints, 2);
+                    }
+                }
                 
                 return [
                     'id' => $course->id,
@@ -68,8 +102,27 @@ class DashboardController extends Controller
                 ];
             });
         
-        // Get pending tasks (classwork not submitted) - placeholder for now
-        $pendingTasks = 0; // TODO: Implement classwork submission tracking
+        // Calculate accurate pending tasks count across all courses
+        $allCourseIds = JoinedCourse::where('user_id', $user->id)
+            ->where('role', 'Student')
+            ->pluck('course_id');
+        
+        $totalClassworks = \App\Models\Classwork::whereIn('course_id', $allCourseIds)
+            ->whereIn('type', ['assignment', 'quiz', 'activity'])
+            ->where('status', 'active')
+            ->count();
+        
+        $submittedClassworks = \App\Models\ClassworkSubmission::whereIn('classwork_id', 
+            \App\Models\Classwork::whereIn('course_id', $allCourseIds)
+                ->whereIn('type', ['assignment', 'quiz', 'activity'])
+                ->where('status', 'active')
+                ->pluck('id')
+        )
+        ->where('student_id', $user->id)
+        ->whereIn('status', ['submitted', 'graded', 'returned'])
+        ->count();
+        
+        $pendingTasks = $totalClassworks - $submittedClassworks;
         
         // Get upcoming events (limit to 5)
         $upcomingEvents = Event::where('date', '>=', now()->toDateString())

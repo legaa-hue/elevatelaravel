@@ -101,9 +101,29 @@ const openClassworkModal = (classwork) => {
     
     // Initialize quiz answers if it's a quiz
     if (classwork.type === 'quiz' && classwork.quiz_questions) {
+        console.log('🎯 DEBUG: Initializing quiz answers...');
+        const initialAnswers = {};
         classwork.quiz_questions.forEach((question, index) => {
-            quizAnswers.value[index] = '';
+            console.log(`Question ${index}:`, {
+                type: question.type,
+                question: question.question,
+                correct_answer: question.correct_answer,
+                correct_answers: question.correct_answers,
+                hasArray: Array.isArray(question.correct_answers),
+                arrayLength: question.correct_answers?.length
+            });
+            
+            // For enumeration questions, initialize as array
+            if (question.type === 'enumeration' && question.correct_answers) {
+                initialAnswers[index] = new Array(question.correct_answers.length).fill('');
+                console.log(`✅ Initialized enumeration array with ${question.correct_answers.length} elements`);
+            } else {
+                initialAnswers[index] = '';
+                console.log(`✅ Initialized as empty string`);
+            }
         });
+        quizAnswers.value = initialAnswers;
+        console.log('Final quizAnswers:', quizAnswers.value);
     }
     
     // If there's an existing submission, populate the form with existing data
@@ -192,6 +212,14 @@ const handleFileUpload = (event) => {
 
 const removeFile = (index) => {
     submissionFiles.value.splice(index, 1);
+};
+
+// Update enumeration answer with proper reactivity
+const updateEnumerationAnswer = (questionIndex, answerIndex, value) => {
+    if (!Array.isArray(quizAnswers.value[questionIndex])) {
+        quizAnswers.value[questionIndex] = [];
+    }
+    quizAnswers.value[questionIndex][answerIndex] = value;
 };
 
 const submitWork = () => {
@@ -796,13 +824,27 @@ const unsubmitWork = () => {
                                                        'text-blue-900'">
                                                 Your Answer:
                                             </p>
-                                            <p class="text-sm text-gray-900">{{ selectedClasswork.submission.quiz_answers[index] }}</p>
+                                            <div v-if="question.type === 'enumeration' && Array.isArray(selectedClasswork.submission.quiz_answers[index])">
+                                                <ul class="list-decimal ml-5">
+                                                    <li v-for="(ans, ansIdx) in selectedClasswork.submission.quiz_answers[index]" :key="ansIdx" class="text-sm text-gray-900">
+                                                        {{ ans || '(No answer)' }}
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                            <p v-else class="text-sm text-gray-900">{{ selectedClasswork.submission.quiz_answers[index] }}</p>
                                         </div>
                                         <!-- Show correct answer when toggle is ON (for both correct and incorrect answers) -->
-                                        <div v-if="selectedClasswork.submission.status === 'graded' && question.correct_answer && showCorrectAnswers" 
+                                        <div v-if="selectedClasswork.submission.status === 'graded' && showCorrectAnswers && (question.correct_answer || (question.type === 'enumeration' && question.correct_answers && question.correct_answers.length > 0))" 
                                              class="bg-green-100 border border-green-300 rounded-lg p-3">
                                             <p class="text-xs font-medium text-green-900 mb-1">✓ Correct Answer:</p>
-                                            <p class="text-sm text-gray-900 font-medium">{{ question.correct_answer }}</p>
+                                            <template v-if="question.type === 'enumeration' && Array.isArray(question.correct_answers) && question.correct_answers.length > 0">
+                                                <ul class="list-decimal ml-5">
+                                                    <li v-for="(corr, corrIdx) in question.correct_answers" :key="corrIdx" class="text-sm text-green-900 font-medium">
+                                                        {{ corr || '(No answer)' }}
+                                                    </li>
+                                                </ul>
+                                            </template>
+                                            <p v-else class="text-sm text-gray-900 font-medium">{{ question.correct_answer }}</p>
                                         </div>
                                     </div>
                                     
@@ -862,7 +904,24 @@ const unsubmitWork = () => {
                                             />
                                         </div>
                                         
-                                        <!-- Essay / Enumeration (multiple lines) -->
+                                        <!-- Enumeration (multiple answer boxes) -->
+                                        <div v-else-if="question.type === 'enumeration'" class="space-y-2">
+                                            <p v-if="!question.correct_answers || question.correct_answers.length === 0" class="text-xs text-red-600">
+                                                ⚠️ No answers configured for this question
+                                            </p>
+                                            <div v-for="(answer, answerIndex) in Math.max(question.correct_answers?.length || 0, 1)" :key="answerIndex" class="flex items-center gap-2">
+                                                <span class="text-sm font-medium text-gray-600 w-8">{{ answerIndex + 1 }}.</span>
+                                                <input
+                                                    type="text"
+                                                    v-model="quizAnswers[index][answerIndex]"
+                                                    @input="updateEnumerationAnswer(index, answerIndex, $event.target.value)"
+                                                    class="flex-1 px-3 py-2 border-2 border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-red-900 transition text-sm"
+                                                    :placeholder="`Answer ${answerIndex + 1}`"
+                                                />
+                                            </div>
+                                        </div>
+                                        
+                                        <!-- Essay (multiple lines) -->
                                         <div v-else>
                                             <textarea
                                                 :id="`quiz-answer-${index}`"
@@ -914,7 +973,7 @@ const unsubmitWork = () => {
                             </div>
                             <h3 class="text-lg font-semibold text-gray-700 mb-2">Your Score</h3>
                             <div class="text-5xl font-bold mb-2"
-                                 :class="selectedClasswork.submission.status === 'graded' ? 'text-green-600' : 'text-blue-600'">
+                                 :class="selectedClasswork.submission.status === 'graded' || (selectedClasswork.submission.grade !== null && selectedClasswork.submission.status === 'submitted') ? 'text-green-600' : 'text-blue-600'">
                                 {{ selectedClasswork.submission.grade !== null ? selectedClasswork.submission.grade : '-' }}<span class="text-3xl text-gray-400">/{{ selectedClasswork.points }}</span>
                             </div>
                             <p v-if="selectedClasswork.submission.grade !== null" class="text-sm text-gray-600">

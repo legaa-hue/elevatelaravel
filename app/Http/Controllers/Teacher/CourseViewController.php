@@ -208,11 +208,20 @@ class CourseViewController extends Controller
                 ->whereIn('type', ['assignment', 'quiz', 'activity'])
                 ->where('status', 'active')
                 ->orderBy('created_at')
-                ->get(['id', 'title', 'type', 'points']),
+                ->get([
+                    'id',
+                    'title',
+                    'type',
+                    'points',
+                    'grading_period',
+                    'grade_table_name',
+                    'grade_main_column',
+                    'grade_sub_column',
+                ]),
             // Announcements for classroom tab
             'announcements' => Event::where(function ($query) use ($course) {
                     // Show announcements that are:
-                    // 1. For 'both' (all courses) by teachers who are assigned to this course
+                    // 1. For 'both' (all courses) by teachers who are assigned to this course AND specific to this course
                     // 2. For 'students' specifically for this course
                     $query->where(function ($q) use ($course) {
                         // Get teacher IDs who are assigned to this course (including course owner)
@@ -223,9 +232,10 @@ class CourseViewController extends Controller
                                 ->pluck('user_id')
                         )->unique()->values();
                         
-                        // Check if announcement is for 'both' and created by assigned teacher
+                        // Check if announcement is for 'both', created by assigned teacher, AND for this specific course
                         $q->where('target_audience', 'both')
-                          ->whereIn('user_id', $teacherIds);
+                          ->whereIn('user_id', $teacherIds)
+                          ->where('course_id', $course->id);
                     })->orWhere(function ($q) use ($course) {
                         // Or course-specific announcement
                         $q->where('target_audience', 'students')
@@ -251,4 +261,37 @@ class CourseViewController extends Controller
                 }),
         ]);
     }
+    
+    /**
+     * Get graded submissions for gradebook population
+     */
+    public function getGradedSubmissions(Course $course)
+    {
+        // Check authorization
+        $user = auth()->user();
+        $isOwner = $course->teacher_id === $user->id;
+        $isJoined = $course->joinedCourses()->where('user_id', $user->id)->where('role', 'Teacher')->exists();
+        $isAdmin = $user->role === 'admin';
+
+        if (!$isOwner && !$isJoined && !$isAdmin) {
+            abort(403, 'Unauthorized');
+        }
+
+        // Get all graded submissions for classwork linked to gradebook
+        $submissions = ClassworkSubmission::whereHas('classwork', function ($query) use ($course) {
+            $query->where('course_id', $course->id)
+                ->whereNotNull('grading_period')
+                ->whereNotNull('grade_table_name')
+                ->whereNotNull('grade_main_column')
+                ->whereNotNull('grade_sub_column');
+        })
+        ->whereIn('status', ['graded', 'returned'])
+        ->whereNotNull('grade')
+        ->get(['id', 'classwork_id', 'student_id', 'grade']);
+
+        return response()->json([
+            'submissions' => $submissions
+        ]);
+    }
 }
+

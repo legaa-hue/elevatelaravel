@@ -1,0 +1,1 @@
+Notes: Teacher Reports mockup implemented with filters, overview cards, distribution bars, student table with actions, insights (basic), and export (CSV/PDF). Uses /teacher/reports/data for data, notification endpoints for actions. PDF uses resources/views/teacher/report_pdf.blade.php via barryvdh/laravel-dompdf.

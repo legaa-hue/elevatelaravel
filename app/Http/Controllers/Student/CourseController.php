@@ -158,6 +158,7 @@ class CourseController extends Controller
                             'options' => $question->options,
                             'option_labels' => $question->option_labels,
                             'correct_answer' => $question->correct_answer,
+                            'correct_answers' => $question->correct_answers, // Added for enumeration
                             'points' => $question->points,
                             'order' => $question->order,
                         ];
@@ -197,7 +198,7 @@ class CourseController extends Controller
         // Get announcements for this course
         $announcements = Event::where(function ($query) use ($course) {
                 // Show announcements that are:
-                // 1. For 'both' (all courses) by teachers who are assigned to this course
+                // 1. For 'both' (all courses) by teachers who are assigned to this course AND specific to this course
                 // 2. For 'students' specifically for this course
                 $query->where(function ($q) use ($course) {
                     // Get teacher IDs who are assigned to this course (including course owner)
@@ -208,9 +209,10 @@ class CourseController extends Controller
                             ->pluck('user_id')
                     )->unique()->values();
                     
-                    // Check if announcement is for 'both' and created by assigned teacher
+                    // Check if announcement is for 'both', created by assigned teacher, AND for this specific course
                     $q->where('target_audience', 'both')
-                      ->whereIn('user_id', $teacherIds);
+                      ->whereIn('user_id', $teacherIds)
+                      ->where('course_id', $course->id);
                 })->orWhere(function ($q) use ($course) {
                     // Or course-specific announcement
                     $q->where('target_audience', 'students')
@@ -328,29 +330,37 @@ class CourseController extends Controller
             $quizQuestions = $classwork->quizQuestions;
             $totalPoints = 0;
             $earnedPoints = 0;
-            
             foreach ($quizQuestions as $index => $question) {
-                $totalPoints += $question->points;
+                $qPoints = $question->points;
+                $totalPoints += $qPoints;
                 $studentAnswer = $validated['quiz_answers'][$index] ?? '';
-                
-                // Check if question type requires manual grading (essay)
-                if (in_array(strtolower($question->type), ['essay', 'long answer', 'short answer'])) {
+                $type = strtolower($question->type);
+                // Check if question type requires manual grading (essay/short answer)
+                if (in_array($type, ['essay', 'long answer', 'short answer'])) {
                     $needsManualGrading = true;
                     continue;
                 }
-                
-                // Auto-grade objective questions (multiple choice, true/false, etc.)
+                // ENUMERATION: Each correct = (points / number of correct answers)
+                if ($type === 'enumeration' && is_array($question->correct_answers) && count($question->correct_answers) > 0) {
+                    $numCorrect = count($question->correct_answers);
+                    $perItem = $qPoints / $numCorrect;
+                    $studentAnsArr = is_array($studentAnswer) ? $studentAnswer : [];
+                    foreach ($question->correct_answers as $ansIdx => $corr) {
+                        if (isset($studentAnsArr[$ansIdx]) && trim(strtolower($studentAnsArr[$ansIdx])) === trim(strtolower($corr))) {
+                            $earnedPoints += $perItem;
+                        }
+                    }
+                    continue;
+                }
+                // Auto-grade objective questions (multiple choice, true/false, identification, etc.)
                 if ($question->correct_answer) {
-                    // Normalize answers for comparison (trim whitespace, case-insensitive)
                     $correctAnswer = trim(strtolower($question->correct_answer));
                     $studentAnswerNormalized = trim(strtolower($studentAnswer));
-                    
                     if ($correctAnswer === $studentAnswerNormalized) {
-                        $earnedPoints += $question->points;
+                        $earnedPoints += $qPoints;
                     }
                 }
             }
-            
             // If no questions need manual grading, auto-grade completely
             if (!$needsManualGrading && $totalPoints > 0) {
                 $autoGrade = $earnedPoints;

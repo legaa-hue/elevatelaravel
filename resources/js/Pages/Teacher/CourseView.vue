@@ -12,6 +12,10 @@ const props = defineProps({
     announcements: Array,
 });
 
+// Debug: Check students prop
+console.log('CourseView - Students prop:', props.students);
+console.log('CourseView - Students count:', props.students?.length);
+
 // Restore active tab from sessionStorage or default to 'classwork'
 const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'classwork');
 const showClassworkModal = ref(false);
@@ -145,23 +149,45 @@ const totalQuizPoints = computed(() => {
 
 // Get available grading periods from gradebook
 const availableGradingPeriods = computed(() => {
-    const periods = [];
-    if (props.course?.gradebook) {
-        if (props.course.gradebook.midterm) periods.push({ value: 'midterm', label: 'Midterm' });
-        if (props.course.gradebook.finals) periods.push({ value: 'finals', label: 'Finals' });
-    }
-    return periods;
+    // Always show Midterm and Finals options, even for new courses without a gradebook yet
+    return [
+        { value: 'midterm', label: 'Midterm' },
+        { value: 'finals', label: 'Finals' }
+    ];
 });
 
 // Get available grade tables for selected grading period
 const availableGradeTables = computed(() => {
-    if (!classworkForm.grading_period || !props.course?.gradebook) return [];
+    if (!classworkForm.grading_period) return [];
+    
+    // If gradebook doesn't exist yet, return default tables
+    if (!props.course?.gradebook) {
+        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+        return [
+            { value: 'Asynchronous', label: 'Asynchronous' },
+            { value: 'Synchronous', label: 'Synchronous' },
+            { value: examName, label: examName }
+            // Note: Summary table is excluded as it's read-only
+        ];
+    }
+    
     const periodData = props.course.gradebook[classworkForm.grading_period];
-    if (!periodData || !periodData.tables) return [];
-    return periodData.tables.map(table => ({
-        value: table.name,
-        label: table.name
-    }));
+    if (!periodData || !periodData.tables) {
+        // Fallback to default tables if period data doesn't exist
+        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+        return [
+            { value: 'Asynchronous', label: 'Asynchronous' },
+            { value: 'Synchronous', label: 'Synchronous' },
+            { value: examName, label: examName }
+        ];
+    }
+    
+    return periodData.tables
+        .filter(table => !table.isSummary) // Filter out Summary table
+        .map(table => ({
+            value: table.name,
+            label: table.name
+        }));
 });
 
 // Get available main columns for selected grade table
@@ -623,6 +649,176 @@ const getOfficeViewerUrl = (fileUrl) => {
     const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
     return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
 };
+
+// Class Record Helper Functions
+const getClassworksByType = (period, types) => {
+    return props.classworks.filter(cw => 
+        cw.grading_period === period && types.includes(cw.type)
+    );
+};
+
+const calculateComponentGrade = (studentId, period, types) => {
+    const classworkItems = getClassworksByType(period, types);
+    if (classworkItems.length === 0) return '-';
+    
+    const student = props.students.find(s => s.id === studentId);
+    if (!student || !student.submissions) return '-';
+    
+    let totalScore = 0;
+    let totalMaxPoints = 0;
+    let hasGrades = false;
+    
+    classworkItems.forEach(cw => {
+        const submission = student.submissions.find(sub => 
+            sub.classwork_id === cw.id && 
+            ['graded', 'returned'].includes(sub.status) &&
+            sub.grade !== null
+        );
+        
+        if (submission) {
+            totalScore += parseFloat(submission.grade || 0);
+            totalMaxPoints += parseFloat(cw.points || 0);
+            hasGrades = true;
+        }
+    });
+    
+    if (!hasGrades || totalMaxPoints === 0) return '-';
+    
+    // Calculate percentage based on component weight
+    const percentage = (totalScore / totalMaxPoints) * 100;
+    
+    // Apply component weight (30% for written works & exam, 40% for performance tasks)
+    let weight = 0.30; // Default for written works and exam
+    if (types.includes('activity')) weight = 0.40; // Performance tasks
+    
+    return (percentage * weight / 100 * 100).toFixed(2);
+};
+
+const calculatePeriodGrade = (studentId, period) => {
+    const writtenWorks = calculateComponentGrade(studentId, period, ['assignment', 'quiz']);
+    const performanceTasks = calculateComponentGrade(studentId, period, ['activity']);
+    const assessment = calculateComponentGrade(studentId, period, ['exam']);
+    
+    if (writtenWorks === '-' && performanceTasks === '-' && assessment === '-') return '-';
+    
+    const ww = writtenWorks === '-' ? 0 : parseFloat(writtenWorks);
+    const pt = performanceTasks === '-' ? 0 : parseFloat(performanceTasks);
+    const qa = assessment === '-' ? 0 : parseFloat(assessment);
+    
+    return (ww + pt + qa).toFixed(2);
+};
+
+const calculateFinalGrade = (studentId) => {
+    const midtermGrade = calculatePeriodGrade(studentId, 'midterm');
+    const finalsGrade = calculatePeriodGrade(studentId, 'finals');
+    
+    if (midtermGrade === '-' && finalsGrade === '-') return '-';
+    
+    const midterm = midtermGrade === '-' ? 0 : parseFloat(midtermGrade);
+    const finals = finalsGrade === '-' ? 0 : parseFloat(finalsGrade);
+    
+    // 50% midterm + 50% finals
+    return ((midterm * 0.5) + (finals * 0.5)).toFixed(2);
+};
+
+const getRemarks = (finalGrade) => {
+    if (finalGrade === '-') return 'No Grade';
+    
+    const grade = parseFloat(finalGrade);
+    
+    if (grade >= 90) return 'EXCELLENT';
+    if (grade >= 85) return 'VERY GOOD';
+    if (grade >= 80) return 'GOOD';
+    if (grade >= 75) return 'FAIR';
+    return 'FAILED';
+};
+
+const getRemarkClass = (finalGrade) => {
+    if (finalGrade === '-') return 'text-gray-500';
+    
+    const grade = parseFloat(finalGrade);
+    
+    if (grade >= 90) return 'text-green-600';
+    if (grade >= 85) return 'text-blue-600';
+    if (grade >= 80) return 'text-yellow-600';
+    if (grade >= 75) return 'text-orange-600';
+    return 'text-red-600';
+};
+
+// Class Record Program Type Toggle
+const programType = ref('masteral'); // 'masteral' or 'doctorate'
+const passingGrade = computed(() => programType.value === 'masteral' ? 1.75 : 1.45);
+
+// Class Record Grade Calculation Functions
+const getMidtermGrade = (studentId) => {
+    const gradebook = props.course.gradebook;
+    if (!gradebook || !gradebook.midterm || !gradebook.midterm.grades) return 0;
+    
+    const studentGrades = gradebook.midterm.grades[studentId];
+    if (!studentGrades) return 0;
+    
+    // Calculate from all midterm grades
+    let totalScore = 0;
+    let count = 0;
+    
+    Object.values(studentGrades).forEach(grade => {
+        if (grade && !isNaN(parseFloat(grade))) {
+            totalScore += parseFloat(grade);
+            count++;
+        }
+    });
+    
+    return count > 0 ? totalScore / count : 0;
+};
+
+const getFinalsGrade = (studentId) => {
+    const gradebook = props.course.gradebook;
+    if (!gradebook || !gradebook.finals || !gradebook.finals.grades) return 0;
+    
+    const studentGrades = gradebook.finals.grades[studentId];
+    if (!studentGrades) return 0;
+    
+    // Calculate from all finals grades
+    let totalScore = 0;
+    let count = 0;
+    
+    Object.values(studentGrades).forEach(grade => {
+        if (grade && !isNaN(parseFloat(grade))) {
+            totalScore += parseFloat(grade);
+            count++;
+        }
+    });
+    
+    return count > 0 ? totalScore / count : 0;
+};
+
+const getFinalGrade = (studentId) => {
+    const midterm = getMidtermGrade(studentId);
+    const finals = getFinalsGrade(studentId);
+    // Get percentages from gradebook or use default 50/50
+    const gradebook = props.course.gradebook;
+    const midtermPercentage = gradebook?.midtermPercentage || 50;
+    const finalsPercentage = gradebook?.finalsPercentage || 50;
+    return (midterm * (midtermPercentage / 100)) + (finals * (finalsPercentage / 100));
+};
+
+const getClassRecordRemark = (finalGrade) => {
+    if (finalGrade === '-' || finalGrade === undefined || finalGrade === null) return 'No Grade';
+    const grade = parseFloat(finalGrade);
+    if (grade <= passingGrade.value) return 'PASSED';
+    return 'FAILED/RETAKE';
+};
+
+const getClassRecordRemarkClass = (finalGrade) => {
+    if (finalGrade === '-' || finalGrade === undefined || finalGrade === null) return 'text-gray-500';
+    const grade = parseFloat(finalGrade);
+    if (grade <= passingGrade.value) return 'text-green-600';
+    return 'text-red-600';
+};
+
+const printClassRecord = () => {
+    window.print();
+};
 </script>
 
 <template>
@@ -1017,23 +1213,109 @@ const getOfficeViewerUrl = (fileUrl) => {
                     </div>
 
                     <!-- Class Record Tab -->
-                    <div v-if="activeTab === 'class-record'">
-                        <div class="bg-white rounded-lg shadow-md p-8 text-center">
-                            <div class="max-w-md mx-auto">
-                                <svg class="w-20 h-20 mx-auto text-green-600 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                                <h2 class="text-2xl font-bold text-gray-900 mb-2">Class Record</h2>
-                                <p class="text-gray-600 mb-6">View and print the official class record for this course.</p>
-                                <Link
-                                    :href="route('teacher.courses.class-record', course.id)"
-                                    class="inline-flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition font-semibold"
-                                >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    Open Class Record
-                                </Link>
+                    <div v-if="activeTab === 'class-record'" class="space-y-6">
+                        <!-- Header Section -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                                <div>
+                                    <h2 class="text-2xl font-bold text-gray-900">Class Record</h2>
+                                    <p class="text-gray-600 mt-1">{{ course.title }} - {{ course.section }}</p>
+                                </div>
+                                <div class="flex flex-col md:flex-row md:items-center gap-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="font-medium text-gray-700">Program Type:</span>
+                                        <button @click="programType.value = 'masteral'" :class="['px-3 py-1 rounded-l border', programType.value === 'masteral' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700']">Masteral</button>
+                                        <button @click="programType.value = 'doctorate'" :class="['px-3 py-1 rounded-r border', programType.value === 'doctorate' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700']">Doctorate</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Simple 5-Column Class Record Table -->
+                        <div class="bg-white rounded-lg shadow-md overflow-hidden">
+                            <div class="overflow-x-auto">
+                                <table class="w-full border-collapse">
+                                    <thead>
+                                        <tr class="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                                            <th class="px-6 py-4 text-left border border-blue-500 font-bold">
+                                                Student Name
+                                            </th>
+                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                                Program
+                                            </th>
+                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                                Midterm Grade
+                                            </th>
+                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                                Final Grade
+                                            </th>
+                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                                Remarks
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr 
+                                            v-for="student in students" 
+                                            :key="student.id"
+                                            class="hover:bg-gray-50 border-b"
+                                        >
+                                            <!-- Student Name -->
+                                            <td class="px-6 py-4 text-left font-medium text-gray-900 border border-gray-300">
+                                                {{ student.name }}
+                                            </td>
+                                            
+                                            <!-- Program -->
+                                            <td class="px-6 py-4 text-center text-gray-700 border border-gray-300">
+                                                {{ student.program || 'N/A' }}
+                                            </td>
+                                            
+                                            <!-- Midterm Grade -->
+                                            <td class="px-6 py-4 text-center font-semibold border border-gray-300"
+                                                :class="getMidtermGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
+                                                {{ getMidtermGrade(student.id).toFixed(2) }}
+                                            </td>
+                                            
+                                            <!-- Final Grade -->
+                                            <td class="px-6 py-4 text-center font-semibold border border-gray-300"
+                                                :class="getFinalsGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
+                                                {{ getFinalsGrade(student.id).toFixed(2) }}
+                                            </td>
+                                            
+                                            <!-- Remarks -->
+                                            <td class="px-6 py-4 text-center font-bold border border-gray-300"
+                                                :class="getClassRecordRemarkClass(getFinalGrade(student.id))">
+                                                {{ getClassRecordRemark(getFinalGrade(student.id)) }}
+                                            </td>
+                                        </tr>
+                                        
+                                        <!-- Empty State -->
+                                        <tr v-if="students.length === 0">
+                                            <td colspan="5" class="px-6 py-12 text-center text-gray-500">
+                                                <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                                                </svg>
+                                                <p class="text-lg font-medium">No students enrolled</p>
+                                                <p class="text-sm text-gray-400 mt-1">Students will appear here once they join the course</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- Legend -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="font-semibold text-gray-900 mb-3">Grading Scale</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="text-sm">{{ programType.value === 'masteral' ? '1.75 and below: Passed' : '1.45 and below: Passed' }}</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                                    <span class="text-sm">Above {{ programType.value === 'masteral' ? '1.75' : '1.45' }}: Failed/Retake</span>
+                                </div>
                             </div>
                         </div>
                     </div>

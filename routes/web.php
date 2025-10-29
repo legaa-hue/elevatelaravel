@@ -133,6 +133,7 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::get('/courses/{course}/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'show'])->name('courses.gradebook');
     Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'save'])->name('courses.gradebook.save');
     Route::get('/courses/{course}/gradebook/load', [\App\Http\Controllers\Teacher\GradebookController::class, 'load'])->name('courses.gradebook.load');
+    Route::get('/courses/{course}/graded-submissions', [\App\Http\Controllers\Teacher\CourseViewController::class, 'getGradedSubmissions'])->name('courses.graded-submissions');
     
     // Class Record for specific course
     Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');
@@ -150,9 +151,11 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     })->name('class-record');
     
     // Reports
-    Route::get('/reports', function () {
-        return Inertia::render('Teacher/Reports');
-    })->name('reports');
+    Route::get('/reports', [\App\Http\Controllers\Teacher\ReportController::class, 'index'])->name('reports');
+    Route::get('/reports/data', [\App\Http\Controllers\Teacher\ReportController::class, 'data'])->name('reports.data');
+    Route::post('/reports/notify-feedback', [\App\Http\Controllers\Teacher\ReportController::class, 'notifyFeedback'])->name('reports.notify-feedback');
+    Route::post('/reports/notify-failing', [\App\Http\Controllers\Teacher\ReportController::class, 'notifyFailing'])->name('reports.notify-failing');
+    Route::get('/reports/export', [\App\Http\Controllers\Teacher\ReportController::class, 'export'])->name('reports.export');
     
     // Notifications
     Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');

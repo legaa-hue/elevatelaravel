@@ -22,6 +22,7 @@ const gradingForm = useForm({
     grade: null,
     feedback: '',
     rubric_scores: {},
+    question_scores: {}, // Store manual scores for each question
     status: 'graded',
 });
 
@@ -38,8 +39,121 @@ const openGradingModal = (submission) => {
     gradingForm.grade = submission.grade || null;
     gradingForm.feedback = submission.feedback || '';
     gradingForm.rubric_scores = submission.rubric_scores || {};
+    gradingForm.question_scores = submission.question_scores || {};
     gradingForm.status = 'graded';
+    
+    // Auto-calculate quiz grade if it's a quiz
+    if (props.classwork.type === 'quiz' && props.classwork.quiz_questions && props.classwork.quiz_questions.length > 0) {
+        const autoGrade = calculateQuizGrade(submission);
+        gradingForm.grade = autoGrade !== null ? autoGrade : 0;
+        // If there are manual questions, allow manual grading per question
+        if (autoGrade === null) {
+            props.classwork.quiz_questions.forEach((question, index) => {
+                if (!question.correct_answer) {
+                    gradingForm.question_scores[index] = gradingForm.question_scores[index] || 0;
+                }
+            });
+        }
+    }
+    
     showGradingModal.value = true;
+};
+
+// Calculate quiz grade based on auto-gradeable questions
+const calculateQuizGrade = (submission) => {
+    if (!submission.quiz_answers || !props.classwork.quiz_questions) return null;
+    
+    let totalPoints = 0;
+    let earnedPoints = 0;
+    let hasManualGrading = false;
+    
+    props.classwork.quiz_questions.forEach((question, index) => {
+        // Skip essay and short_answer (manual grading only)
+        if (question.type === 'essay' || question.type === 'short_answer') {
+            hasManualGrading = true;
+            return;
+        }
+
+        // ENUMERATION: Each correct answer = (question.points / number of correct answers)
+        if (question.type === 'enumeration' && question.correct_answers && Array.isArray(question.correct_answers)) {
+            const studentAnswers = submission.quiz_answers[index];
+            const numCorrect = question.correct_answers.length;
+            const questionPoints = parseFloat(question.points) || numCorrect || 1;
+            totalPoints += questionPoints;
+            if (Array.isArray(studentAnswers)) {
+                let correctCount = 0;
+                question.correct_answers.forEach((correctAns, ansIndex) => {
+                    if (studentAnswers[ansIndex] && 
+                        String(studentAnswers[ansIndex]).toLowerCase().trim() === String(correctAns).toLowerCase().trim()) {
+                        correctCount++;
+                    }
+                });
+                // Each correct = questionPoints / numCorrect
+                earnedPoints += (correctCount * (questionPoints / numCorrect));
+            }
+        }
+        // OTHER TYPES: single correct_answer
+        else if (question.correct_answer && submission.quiz_answers[index]) {
+            const questionPoints = parseFloat(question.points) || 0;
+            totalPoints += questionPoints;
+            const studentAnswer = String(submission.quiz_answers[index]).toLowerCase().trim();
+            const correctAnswer = String(question.correct_answer).toLowerCase().trim();
+            if (studentAnswer === correctAnswer) {
+                earnedPoints += questionPoints;
+            }
+        }
+    });
+    
+    // If all questions are auto-gradeable, return the calculated grade
+    // If there's manual grading, return null to allow teacher to grade manually
+    return hasManualGrading ? null : earnedPoints;
+};
+
+// Check if quiz has any questions requiring manual grading
+const quizHasManualGrading = computed(() => {
+    if (props.classwork.type !== 'quiz' || !props.classwork.quiz_questions) return false;
+    // Only essay and short_answer require manual grading
+    return props.classwork.quiz_questions.some(question => question.type === 'essay' || question.type === 'short_answer');
+// Always auto-grade and submit if all questions are auto-gradable
+const autoGradeAndSubmitIfPossible = (submission) => {
+    if (props.classwork.type === 'quiz' && props.classwork.quiz_questions && props.classwork.quiz_questions.length > 0) {
+        const hasManual = props.classwork.quiz_questions.some(q => q.type === 'essay' || q.type === 'short_answer');
+        if (!hasManual) {
+            const autoGrade = calculateQuizGrade(submission);
+            if (autoGrade !== null) {
+                gradingForm.grade = autoGrade;
+                gradingForm.status = 'graded';
+                submitGrade();
+            }
+        }
+    }
+};
+});
+
+// Calculate total grade from question scores (for manual grading)
+const calculateTotalFromQuestionScores = () => {
+    if (props.classwork.type !== 'quiz') return;
+    
+    let total = 0;
+    
+    props.classwork.quiz_questions.forEach((question, index) => {
+        const questionPoints = parseFloat(question.points) || 0;
+        
+        // If question has correct answer, check if student got it right
+        if (question.correct_answer && selectedSubmission.value?.quiz_answers?.[index]) {
+            const studentAnswer = String(selectedSubmission.value.quiz_answers[index]).toLowerCase().trim();
+            const correctAnswer = String(question.correct_answer).toLowerCase().trim();
+            
+            if (studentAnswer === correctAnswer) {
+                total += questionPoints;
+            }
+        } else {
+            // Add manual score if provided
+            total += parseFloat(gradingForm.question_scores[index]) || 0;
+        }
+    });
+    
+    gradingForm.grade = total;
 };
 
 const closeGradingModal = () => {
@@ -473,10 +587,27 @@ const getFileIcon = (filename) => {
                                                 <p class="text-sm text-green-900 font-medium">{{ question.correct_answer }}</p>
                                             </div>
                                             
-                                            <!-- Manual grading for essay/short answer types -->
-                                            <div v-if="!question.correct_answer" class="mt-2">
-                                                <p class="text-xs text-orange-600 font-medium mb-1">⚠️ Requires Manual Grading</p>
-                                                <p class="text-xs text-gray-500">No auto-grading available for {{ question.type }} questions</p>
+                                            <!-- Manual grading for essay/short answer types only -->
+                                            <div v-if="question.type === 'essay' || question.type === 'short_answer'" class="mt-3 space-y-2">
+                                                <div class="flex items-center justify-between p-2 bg-orange-50 border border-orange-200 rounded">
+                                                    <div>
+                                                        <p class="text-xs text-orange-600 font-medium">⚠️ Requires Manual Grading</p>
+                                                        <p class="text-xs text-gray-500">Award points based on answer quality</p>
+                                                    </div>
+                                                    <div class="flex items-center gap-2">
+                                                        <input
+                                                            type="number"
+                                                            v-model.number="gradingForm.question_scores[index]"
+                                                            @input="calculateTotalFromQuestionScores"
+                                                            :max="question.points"
+                                                            min="0"
+                                                            step="0.5"
+                                                            class="w-20 px-2 py-1 border border-gray-300 rounded text-sm text-center focus:ring-2 focus:ring-blue-500"
+                                                            :placeholder="`0-${question.points}`"
+                                                        />
+                                                        <span class="text-xs text-gray-600">/ {{ question.points }} pts</span>
+                                                    </div>
+                                                </div>
                                             </div>
                                             
                                             <!-- Auto-graded result indicator -->
@@ -538,6 +669,9 @@ const getFileIcon = (filename) => {
                                 <div>
                                     <label for="grade" class="block text-sm font-medium text-gray-700 mb-1">
                                         Total Grade <span class="text-gray-500">(out of {{ classwork.points }})</span>
+                                        <span v-if="classwork.type === 'quiz' && !quizHasManualGrading" class="text-xs text-blue-600 ml-2">
+                                            (Auto-calculated)
+                                        </span>
                                     </label>
                                     <input
                                         id="grade"
@@ -548,9 +682,19 @@ const getFileIcon = (filename) => {
                                         :max="classwork.points"
                                         min="0"
                                         step="0.5"
-                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                        :readonly="classwork.type === 'quiz' && !quizHasManualGrading"
+                                        :class="[
+                                            'w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent',
+                                            classwork.type === 'quiz' && !quizHasManualGrading ? 'bg-gray-100 cursor-not-allowed' : ''
+                                        ]"
                                         required
                                     />
+                                    <p v-if="classwork.type === 'quiz' && !quizHasManualGrading" class="text-xs text-gray-500 mt-1">
+                                        Grade is automatically calculated from quiz answers
+                                    </p>
+                                    <p v-else-if="classwork.type === 'quiz' && quizHasManualGrading" class="text-xs text-orange-600 mt-1">
+                                        ⚠️ This quiz contains essay/short answer questions. Adjust the grade manually after reviewing.
+                                    </p>
                                 </div>
 
                                 <!-- Feedback -->

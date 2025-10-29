@@ -8,8 +8,13 @@ const props = defineProps({
     course: Object,
     students: Array,
     classworks: Array,
+    submissions: Array,
     gradebook: { type: Object, default: null }
 });
+
+// Debug: Check if students are being passed
+console.log('Gradebook Students Prop:', props.students);
+console.log('Students Count:', props.students?.length);
 
 // Get current user to determine layout
 const page = usePage();

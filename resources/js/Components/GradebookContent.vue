@@ -49,44 +49,64 @@ const editingSubcolumnMaxPoints = ref(null);
 const tempSubcolumnName = ref('');
 const tempSubcolumnMaxPoints = ref(100);
 
-const createDefaultTables = () => ({
-    asynchronous: {
-        id: 'asynchronous',
-        name: 'Asynchronous',
-        percentage: 35,
-        columns: [
-            { id: 'written-works', name: 'Written Works', percentage: 15, subcolumns: [] },
-            { id: 'attendance', name: 'Attendance', percentage: 10, subcolumns: [] },
-            { id: 'recitation', name: 'Recitation', percentage: 10, subcolumns: [] }
-        ]
-    },
-    synchronous: {
-        id: 'synchronous',
-        name: 'Synchronous',
-        percentage: 35,
-        columns: [
-            { id: 'attendance', name: 'Attendance', percentage: 15, subcolumns: [] },
-            { id: 'participation', name: 'Participation', percentage: 10, subcolumns: [] },
-            { id: 'oral-activity', name: 'Oral Activity', percentage: 10, subcolumns: [] }
-        ]
-    },
-    majorExam: {
-        id: 'majorExam',
-        name: 'Major Exam',
-        percentage: 30,
-        columns: [
-            { id: 'exam', name: 'Midterm Exam', percentage: 30, subcolumns: [] }
-        ]
-    }
-});
+// Create default tables structure
+const createDefaultTables = (period = 'midterm') => {
+    const examName = period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+    
+    return {
+        'async': {
+            id: 'async',
+            name: 'Asynchronous',
+            percentage: 35,
+            columns: []
+        },
+        'sync': {
+            id: 'sync',
+            name: 'Synchronous',
+            percentage: 35,
+            columns: []
+        },
+        'exam': {
+            id: 'exam',
+            name: examName,
+            percentage: 30,
+            columns: []
+        },
+        'summary': {
+            id: 'summary',
+            name: 'Summary',
+            percentage: 0,
+            isReadOnly: true,
+            isSummary: true,
+            columns: [
+                {
+                    id: 'summary-col-1',
+                    name: 'Total Grade',
+                    percentage: 0,
+                    subcolumns: []
+                }
+            ]
+        }
+    };
+};
 
-const midtermTables = ref(createDefaultTables());
-const finalsTables = ref(createDefaultTables());
+const midtermTables = ref(createDefaultTables('midterm'));
+const finalsTables = ref(createDefaultTables('finals'));
 const studentGrades = ref({});
 
-props.students.forEach(student => {
-    studentGrades.value[student.id] = { midterm: {}, finals: {} };
-});
+// Debug and initialize student grades
+console.log('GradebookContent - Students prop:', props.students);
+console.log('GradebookContent - Students count:', props.students?.length);
+console.log('GradebookContent - Students data:', JSON.stringify(props.students));
+
+if (props.students && Array.isArray(props.students)) {
+    props.students.forEach(student => {
+        studentGrades.value[student.id] = { midterm: {}, finals: {} };
+    });
+    console.log('GradebookContent - Initialized grades for students:', Object.keys(studentGrades.value));
+} else {
+    console.error('GradebookContent - No students array received!', props.students);
+}
 
 const midtermPercentageError = computed(() => {
     const total = midtermPercentage.value + finalsPercentage.value;
@@ -138,6 +158,17 @@ const calculateStudentTableTotal = (studentId, period, tableKey) => {
     const tables = getCurrentTables(period);
     const table = tables[tableKey];
     if (!table) return '0.00';
+    
+    // If this is the Summary table, calculate the total of all other tables
+    if (table.isSummary) {
+        let grandTotal = 0;
+        Object.keys(tables).forEach(key => {
+            if (key !== tableKey && !tables[key].isSummary) {
+                grandTotal += parseFloat(calculateStudentTableTotal(studentId, period, key)) || 0;
+            }
+        });
+        return grandTotal.toFixed(2);
+    }
     
     let total = 0;
     table.columns.forEach(column => {
@@ -194,6 +225,12 @@ const validateGradingPeriodPercentage = (period) => {
 };
 
 const populateSubcolumnsFromClassworks = () => {
+    const slugify = (s) => (s || '')
+        .toString()
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)+/g, '') || ('id-' + Date.now());
     const linkedClassworks = props.classworks.filter(cw => 
         cw.grading_period && cw.grade_table_name && cw.grade_main_column
     );
@@ -223,13 +260,23 @@ const populateSubcolumnsFromClassworks = () => {
         
         newSubcolumns.forEach(newSub => {
             // Check if this classwork-based subcolumn already exists
-            const exists = merged.some(existing => 
+            const existingIndex = merged.findIndex(existing => 
                 existing.classworkId === newSub.classworkId || 
                 (existing.name === newSub.name && existing.isAutoPopulated)
             );
             
-            if (!exists) {
+            if (existingIndex === -1) {
+                // New auto subcolumn from classwork
                 merged.push(newSub);
+            } else {
+                // Update existing auto subcolumn details (keep in sync with classwork)
+                merged[existingIndex] = {
+                    ...merged[existingIndex],
+                    name: newSub.name,
+                    maxPoints: newSub.maxPoints,
+                    classworkId: newSub.classworkId,
+                    isAutoPopulated: true,
+                };
             }
         });
         
@@ -238,47 +285,190 @@ const populateSubcolumnsFromClassworks = () => {
     
     if (grouped.midterm) {
         Object.keys(grouped.midterm).forEach(tableName => {
-            const table = Object.values(midtermTables.value).find(t => 
-                t.name.toLowerCase() === tableName.toLowerCase()
+            // Ensure table exists; create if missing (0% to avoid affecting weights)
+            let tableEntryKey = Object.keys(midtermTables.value).find(
+                key => midtermTables.value[key].name.toLowerCase() === tableName.toLowerCase()
             );
-            if (table) {
-                Object.keys(grouped.midterm[tableName]).forEach(columnName => {
-                    const column = table.columns.find(c => 
-                        c.name.toLowerCase() === columnName.toLowerCase()
-                    );
-                    if (column) {
-                        // Merge instead of replace
-                        column.subcolumns = mergeSubcolumns(
-                            column.subcolumns, 
-                            grouped.midterm[tableName][columnName]
-                        );
-                    }
-                });
+            if (!tableEntryKey) {
+                const newId = slugify(tableName);
+                midtermTables.value[newId] = {
+                    id: newId,
+                    name: tableName,
+                    percentage: midtermTables.value[newId]?.percentage || 0,
+                    columns: []
+                };
+                tableEntryKey = newId;
             }
+            const table = midtermTables.value[tableEntryKey];
+
+            Object.keys(grouped.midterm[tableName]).forEach(columnName => {
+                // Ensure column exists; create if missing (0% to avoid affecting weights)
+                let column = table.columns.find(c => 
+                    c.name.toLowerCase() === columnName.toLowerCase()
+                );
+                if (!column) {
+                    column = {
+                        id: slugify(columnName),
+                        name: columnName,
+                        percentage: 0,
+                        subcolumns: []
+                    };
+                    table.columns.push(column);
+                }
+                // Merge instead of replace
+                column.subcolumns = mergeSubcolumns(
+                    column.subcolumns, 
+                    grouped.midterm[tableName][columnName]
+                );
+            });
         });
     }
     
     if (grouped.finals) {
         Object.keys(grouped.finals).forEach(tableName => {
-            const table = Object.values(finalsTables.value).find(t => 
-                t.name.toLowerCase() === tableName.toLowerCase()
+            // Ensure table exists; create if missing (0% to avoid affecting weights)
+            let tableEntryKey = Object.keys(finalsTables.value).find(
+                key => finalsTables.value[key].name.toLowerCase() === tableName.toLowerCase()
             );
-            if (table) {
-                Object.keys(grouped.finals[tableName]).forEach(columnName => {
-                    const column = table.columns.find(c => 
-                        c.name.toLowerCase() === columnName.toLowerCase()
-                    );
-                    if (column) {
-                        // Merge instead of replace
-                        column.subcolumns = mergeSubcolumns(
-                            column.subcolumns, 
-                            grouped.finals[tableName][columnName]
-                        );
-                    }
-                });
+            if (!tableEntryKey) {
+                const newId = slugify(tableName);
+                finalsTables.value[newId] = {
+                    id: newId,
+                    name: tableName,
+                    percentage: finalsTables.value[newId]?.percentage || 0,
+                    columns: []
+                };
+                tableEntryKey = newId;
             }
+            const table = finalsTables.value[tableEntryKey];
+
+            Object.keys(grouped.finals[tableName]).forEach(columnName => {
+                // Ensure column exists; create if missing (0% to avoid affecting weights)
+                let column = table.columns.find(c => 
+                    c.name.toLowerCase() === columnName.toLowerCase()
+                );
+                if (!column) {
+                    column = {
+                        id: slugify(columnName),
+                        name: columnName,
+                        percentage: 0,
+                        subcolumns: []
+                    };
+                    table.columns.push(column);
+                }
+                // Merge instead of replace
+                column.subcolumns = mergeSubcolumns(
+                    column.subcolumns, 
+                    grouped.finals[tableName][columnName]
+                );
+            });
         });
     }
+};
+
+// Populate grades from graded submissions
+const populateGradesFromSubmissions = async () => {
+    try {
+        // Fetch graded submissions for this course
+        const response = await axios.get(`/teacher/courses/${props.course.id}/graded-submissions`);
+        const submissions = response.data.submissions || [];
+        
+        // Map submissions to gradebook
+        submissions.forEach(submission => {
+            const classwork = props.classworks.find(cw => cw.id === submission.classwork_id);
+            
+            if (!classwork || !classwork.grading_period || !classwork.grade_table_name || 
+                !classwork.grade_main_column || !classwork.grade_sub_column) {
+                return; // Skip if classwork is not linked to gradebook
+            }
+            
+            const period = classwork.grading_period.toLowerCase();
+            const tables = period === 'midterm' ? midtermTables.value : finalsTables.value;
+            
+            // Find the table
+            const table = Object.values(tables).find(t => 
+                t.name.toLowerCase() === classwork.grade_table_name.toLowerCase()
+            );
+            
+            if (!table) return;
+            
+            // Find the column
+            const column = table.columns.find(c => 
+                c.name.toLowerCase() === classwork.grade_main_column.toLowerCase()
+            );
+            
+            if (!column) return;
+            
+            // Find the subcolumn
+            const subcolumn = column.subcolumns.find(sc => 
+                sc.classworkId === classwork.id || 
+                (sc.name === classwork.grade_sub_column && sc.isAutoPopulated)
+            );
+            
+            if (!subcolumn) return;
+            
+            // Set the grade
+            const gradeKey = `${table.id}-${column.id}-${subcolumn.id}`;
+            if (studentGrades.value[submission.student_id] && 
+                studentGrades.value[submission.student_id][period]) {
+                studentGrades.value[submission.student_id][period][gradeKey] = submission.grade;
+            }
+        });
+
+        // Default 0 for students without submissions in auto-populated subcolumns
+        const ensureZeroForMissing = (periodTables, periodKey) => {
+            Object.entries(periodTables).forEach(([tableKey, table]) => {
+                table.columns.forEach(column => {
+                    (column.subcolumns || []).forEach(subcolumn => {
+                        if (!subcolumn.isAutoPopulated) return;
+                        const gradeKey = `${tableKey}-${column.id}-${subcolumn.id}`;
+                        Object.keys(studentGrades.value).forEach(studentId => {
+                            const periodGrades = studentGrades.value[studentId]?.[periodKey];
+                            if (periodGrades && (periodGrades[gradeKey] === undefined || periodGrades[gradeKey] === null || periodGrades[gradeKey] === '')) {
+                                periodGrades[gradeKey] = 0;
+                            }
+                        });
+                    });
+                });
+            });
+        };
+
+        ensureZeroForMissing(midtermTables.value, 'midterm');
+        ensureZeroForMissing(finalsTables.value, 'finals');
+    } catch (error) {
+        console.error('Error loading submission grades:', error);
+    }
+};
+
+// Remove auto-populated subcolumns whose classwork no longer exists and clear their grades
+const cleanupRemovedClassworks = () => {
+    const validIds = new Set((props.classworks || []).map(cw => cw.id));
+    const cleanup = (periodTables, periodKey) => {
+        Object.entries(periodTables).forEach(([tableKey, table]) => {
+            table.columns.forEach(column => {
+                const before = column.subcolumns?.length || 0;
+                column.subcolumns = (column.subcolumns || []).filter(sub => {
+                    const keep = !sub.isAutoPopulated || validIds.has(sub.classworkId);
+                    if (!keep) {
+                        // Delete saved grades for this subcolumn for all students
+                        const gradeKey = `${tableKey}-${column.id}-${sub.id}`;
+                        Object.keys(studentGrades.value).forEach(studentId => {
+                            if (studentGrades.value[studentId]?.[periodKey]?.[gradeKey] !== undefined) {
+                                delete studentGrades.value[studentId][periodKey][gradeKey];
+                            }
+                        });
+                    }
+                    return keep;
+                });
+                const after = column.subcolumns.length;
+                if (before !== after) {
+                    // Column changed; could trigger save
+                }
+            });
+        });
+    };
+    cleanup(midtermTables.value, 'midterm');
+    cleanup(finalsTables.value, 'finals');
 };
 
 const toggleSection = (period) => {
@@ -378,6 +568,10 @@ const deleteTable = (period, tableKey) => {
     if (confirm('Are you sure you want to delete this table? All data will be lost.')) {
         const tables = period === 'midterm' ? midtermTables : finalsTables;
         delete tables.value[tableKey];
+        // Recreate any required auto tables/columns from classworks
+        populateSubcolumnsFromClassworks();
+        cleanupRemovedClassworks();
+        populateGradesFromSubmissions();
         saveGradebook();
     }
 };
@@ -611,6 +805,10 @@ const deleteColumn = (period, tableKey, columnIndex) => {
         const tables = getCurrentTables(period);
         const table = tables[tableKey];
         table.columns.splice(columnIndex, 1);
+        // Recreate any required auto columns/subcolumns from classworks
+        populateSubcolumnsFromClassworks();
+        cleanupRemovedClassworks();
+        populateGradesFromSubmissions();
         saveGradebook();
     }
 };
@@ -721,9 +919,14 @@ const saveGradebook = async () => {
             }
         };
         
-        await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
+        console.log('Saving gradebook data:', data);
+        const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
+        console.log('Gradebook saved successfully:', response.data);
     } catch (error) {
         console.error('Error saving gradebook:', error);
+        console.error('Error response:', error.response?.data);
+        console.error('Error status:', error.response?.status);
+        alert('Error saving gradebook: ' + (error.response?.data?.message || error.message));
     } finally {
         isSaving.value = false;
     }
@@ -747,23 +950,25 @@ const loadGradebook = async () => {
                 finalsPercentage.value = gradebook.finalsPercentage;
             }
             
-            // Load midterm tables structure
-            if (gradebook.midterm && gradebook.midterm.tables) {
+            // Load midterm tables structure (keep defaults if no saved data)
+            if (gradebook.midterm && gradebook.midterm.tables && gradebook.midterm.tables.length > 0) {
                 const midtermTablesObj = {};
                 gradebook.midterm.tables.forEach(table => {
                     midtermTablesObj[table.id] = table;
                 });
                 midtermTables.value = midtermTablesObj;
             }
+            // If no saved tables, keep the default structure
             
-            // Load finals tables structure
-            if (gradebook.finals && gradebook.finals.tables) {
+            // Load finals tables structure (keep defaults if no saved data)
+            if (gradebook.finals && gradebook.finals.tables && gradebook.finals.tables.length > 0) {
                 const finalsTablesObj = {};
                 gradebook.finals.tables.forEach(table => {
                     finalsTablesObj[table.id] = table;
                 });
                 finalsTables.value = finalsTablesObj;
             }
+            // If no saved tables, keep the default structure
             
             // Load grades
             if (gradebook.midterm && gradebook.midterm.grades) {
@@ -782,16 +987,31 @@ const loadGradebook = async () => {
                 });
             }
         }
+        // If no gradebook data at all, defaults will be used automatically
     } catch (error) {
         console.error('Error loading gradebook:', error);
+        // On error, keep the default tables
     }
 };
 
-onMounted(() => {
-    loadGradebook().then(() => {
-        populateSubcolumnsFromClassworks();
-    });
+onMounted(async () => {
+    await loadGradebook();
+    populateSubcolumnsFromClassworks();
+    populateGradesFromSubmissions();
 });
+
+// Watch for classworks change to keep gradebook in sync (add new, update points, remove deleted)
+watch(
+    () => props.classworks,
+    async () => {
+        populateSubcolumnsFromClassworks();
+        cleanupRemovedClassworks();
+        await populateGradesFromSubmissions();
+        // Persist changes after sync
+        saveGradebook();
+    },
+    { deep: true }
+);
 </script>
 
 <template>
@@ -935,11 +1155,34 @@ onMounted(() => {
                     </button>
                 </div>
 
+                <!-- Empty State Message -->
+                <div v-if="Object.keys(midtermTables).length === 0" class="text-center py-12 bg-blue-50 rounded-lg border-2 border-dashed border-blue-300">
+                    <svg class="w-16 h-16 mx-auto text-blue-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-2">No Grading Tables Yet</h3>
+                    <p class="text-gray-600 mb-4">Start designing your grading system by adding your first table</p>
+                    <button 
+                        @click="openAddTableModal('midterm')"
+                        class="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 inline-flex items-center gap-2 font-semibold"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Create First Table
+                    </button>
+                </div>
+
                 <div v-for="(table, tableKey) in midtermTables" :key="tableKey" class="border border-gray-300 rounded-lg overflow-hidden">
                     <div class="bg-gray-100 px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-3">
-                            <!-- Editable Table Name -->
-                            <div v-if="editingTableName === `midterm-${tableKey}`" class="flex items-center gap-2">
+                            <!-- Summary Table Badge -->
+                            <span v-if="table.isSummary" class="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">
+                                AUTO-COMPUTED
+                            </span>
+                            
+                            <!-- Editable Table Name (disabled for summary) -->
+                            <div v-if="editingTableName === `midterm-${tableKey}` && !table.isReadOnly" class="flex items-center gap-2">
                                 <input 
                                     v-model="tempTableName"
                                     @blur="finishEditTableName('midterm', tableKey)"
@@ -951,15 +1194,18 @@ onMounted(() => {
                             </div>
                             <h5 
                                 v-else
-                                @click="startEditTableName('midterm', tableKey)"
-                                class="font-semibold text-gray-900 cursor-pointer hover:text-blue-600 hover:underline"
-                                title="Click to edit table name"
+                                @click="!table.isReadOnly && startEditTableName('midterm', tableKey)"
+                                :class="[
+                                    'font-semibold text-gray-900',
+                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-blue-600 hover:underline'
+                                ]"
+                                :title="table.isReadOnly ? 'Summary table (read-only)' : 'Click to edit table name'"
                             >
                                 {{ table.name }}
                             </h5>
                             
-                            <!-- Editable Table Percentage -->
-                            <div v-if="editingTablePercentage === `midterm-${tableKey}`" class="flex items-center gap-1">
+                            <!-- Editable Table Percentage (disabled for summary) -->
+                            <div v-if="editingTablePercentage === `midterm-${tableKey}` && !table.isReadOnly" class="flex items-center gap-1">
                                 <input 
                                     v-model.number="tempTablePercentage"
                                     @blur="finishEditTablePercentage('midterm', tableKey)"
@@ -974,20 +1220,24 @@ onMounted(() => {
                                 <span class="text-sm text-gray-600">%</span>
                             </div>
                             <span 
-                                v-else
-                                @click="startEditTablePercentage('midterm', tableKey)"
-                                class="text-sm text-gray-600 bg-white px-3 py-1 rounded-full cursor-pointer hover:bg-blue-100 hover:text-blue-700"
-                                title="Click to edit percentage"
+                                v-else-if="!table.isSummary"
+                                @click="!table.isReadOnly && startEditTablePercentage('midterm', tableKey)"
+                                :class="[
+                                    'text-sm text-gray-600 bg-white px-3 py-1 rounded-full',
+                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:bg-blue-100 hover:text-blue-700'
+                                ]"
+                                :title="table.isReadOnly ? 'Summary table (read-only)' : 'Click to edit percentage'"
                             >
                                 {{ table.percentage }}%
                             </span>
                             
-                            <span class="text-xs text-gray-500">
+                            <span v-if="!table.isSummary" class="text-xs text-gray-500">
                                 (Columns: {{ getColumnsTotalPercentage('midterm', tableKey) }}% / {{ table.percentage }}%)
                             </span>
                         </div>
                         <div class="flex gap-2">
                             <button 
+                                v-if="!table.isReadOnly"
                                 @click="openAddColumnModal('midterm', tableKey)"
                                 :disabled="!canAddColumn('midterm', tableKey)"
                                 class="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
@@ -995,6 +1245,7 @@ onMounted(() => {
                                 + Column
                             </button>
                             <button 
+                                v-if="!table.isReadOnly"
                                 @click="deleteTable('midterm', tableKey)"
                                 class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
                             >
@@ -1015,8 +1266,8 @@ onMounted(() => {
                                         class="px-4 py-2 text-center text-sm font-semibold text-gray-700 border-b border-l"
                                     >
                                         <div class="flex items-center justify-center gap-2 mb-2">
-                                            <!-- Editable Column Name -->
-                                            <div v-if="editingColumnName === `midterm-${tableKey}-${colIndex}`" class="flex items-center gap-1">
+                                            <!-- Editable Column Name (disabled for read-only tables) -->
+                                            <div v-if="editingColumnName === `midterm-${tableKey}-${colIndex}` && !table.isReadOnly" class="flex items-center gap-1">
                                                 <input 
                                                     v-model="tempColumnName"
                                                     @blur="finishEditColumnName('midterm', tableKey, colIndex)"
@@ -1028,15 +1279,17 @@ onMounted(() => {
                                             </div>
                                             <span 
                                                 v-else
-                                                @click="startEditColumnName('midterm', tableKey, colIndex)"
-                                                class="cursor-pointer hover:text-blue-600 hover:underline"
-                                                title="Click to edit column name"
+                                                @click="!table.isReadOnly && startEditColumnName('midterm', tableKey, colIndex)"
+                                                :class="[
+                                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-blue-600 hover:underline'
+                                                ]"
+                                                :title="table.isReadOnly ? 'Read-only column' : 'Click to edit column name'"
                                             >
                                                 {{ column.name }}
                                             </span>
                                             
-                                            <!-- Editable Column Percentage -->
-                                            <div v-if="editingColumnPercentage === `midterm-${tableKey}-${colIndex}`" class="flex items-center gap-1">
+                                            <!-- Editable Column Percentage (disabled for read-only tables) -->
+                                            <div v-if="editingColumnPercentage === `midterm-${tableKey}-${colIndex}` && !table.isReadOnly" class="flex items-center gap-1">
                                                 <span>(</span>
                                                 <input 
                                                     v-model.number="tempColumnPercentage"
@@ -1051,15 +1304,18 @@ onMounted(() => {
                                                 <span>%)</span>
                                             </div>
                                             <span 
-                                                v-else
-                                                @click="startEditColumnPercentage('midterm', tableKey, colIndex)"
-                                                class="cursor-pointer hover:text-blue-600 hover:underline"
-                                                title="Click to edit percentage"
+                                                v-else-if="!table.isSummary"
+                                                @click="!table.isReadOnly && startEditColumnPercentage('midterm', tableKey, colIndex)"
+                                                :class="[
+                                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-blue-600 hover:underline'
+                                                ]"
+                                                :title="table.isReadOnly ? 'Read-only column' : 'Click to edit percentage'"
                                             >
                                                 ({{ column.percentage }}%)
                                             </span>
                                             
                                             <button 
+                                                v-if="!table.isReadOnly"
                                                 @click="openAddSubcolumnModal('midterm', tableKey, colIndex)"
                                                 class="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
                                                 title="Add Subcolumn"
@@ -1067,6 +1323,7 @@ onMounted(() => {
                                                 + Sub
                                             </button>
                                             <button 
+                                                v-if="!table.isReadOnly"
                                                 @click="deleteColumn('midterm', tableKey, colIndex)"
                                                 class="text-red-600 hover:text-red-800"
                                             >
@@ -1151,15 +1408,24 @@ onMounted(() => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="student in students" :key="student.id" class="hover:bg-gray-50">
-                                    <td class="px-4 py-2 border-b text-sm">{{ student.first_name }} {{ student.last_name }}</td>
+                                <tr v-for="student in props.students" :key="student.id" class="hover:bg-gray-50">
+                                    <td class="px-4 py-2 border-b text-sm">{{ student.name }}</td>
                                     <template v-for="column in table.columns" :key="column.id">
                                         <td 
                                             v-for="subcolumn in column.subcolumns" 
                                             :key="subcolumn.id"
                                             class="px-2 py-2 border-b border-l"
                                         >
+                                            <!-- Read-only display for Summary table -->
+                                            <div 
+                                                v-if="table.isSummary"
+                                                class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700"
+                                            >
+                                                {{ calculateStudentTableTotal(student.id, 'midterm', tableKey) }}
+                                            </div>
+                                            <!-- Editable input for other tables -->
                                             <input 
+                                                v-else
                                                 v-model="studentGrades[student.id].midterm[`${tableKey}-${column.id}-${subcolumn.id}`]"
                                                 type="number"
                                                 :max="subcolumn.maxPoints"
@@ -1191,8 +1457,8 @@ onMounted(() => {
                 <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
                     <h5 class="font-semibold text-blue-900 mb-3">Midterm Period Grades</h5>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <div v-for="student in students" :key="student.id" class="bg-white p-3 rounded-lg border border-blue-200">
-                            <p class="text-sm text-gray-700">{{ student.first_name }} {{ student.last_name }}</p>
+                        <div v-for="student in props.students" :key="student.id" class="bg-white p-3 rounded-lg border border-blue-200">
+                            <p class="text-sm text-gray-700">{{ student.name }}</p>
                             <p class="text-2xl font-bold text-blue-600">{{ calculateStudentPeriodGrade(student.id, 'midterm') }}</p>
                         </div>
                     </div>
@@ -1222,11 +1488,34 @@ onMounted(() => {
                     </button>
                 </div>
 
+                <!-- Empty State Message -->
+                <div v-if="Object.keys(finalsTables).length === 0" class="text-center py-12 bg-green-50 rounded-lg border-2 border-dashed border-green-300">
+                    <svg class="w-16 h-16 mx-auto text-green-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    <h3 class="text-xl font-semibold text-gray-700 mb-2">No Grading Tables Yet</h3>
+                    <p class="text-gray-600 mb-4">Start designing your grading system by adding your first table</p>
+                    <button 
+                        @click="openAddTableModal('finals')"
+                        class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 inline-flex items-center gap-2 font-semibold"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        Create First Table
+                    </button>
+                </div>
+
                 <div v-for="(table, tableKey) in finalsTables" :key="tableKey" class="border border-gray-300 rounded-lg overflow-hidden">
                     <div class="bg-gray-100 px-4 py-3 flex items-center justify-between">
                         <div class="flex items-center gap-3">
-                            <!-- Editable Table Name -->
-                            <div v-if="editingTableName === `finals-${tableKey}`" class="flex items-center gap-2">
+                            <!-- Summary Table Badge -->
+                            <span v-if="table.isSummary" class="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-full">
+                                AUTO-COMPUTED
+                            </span>
+                            
+                            <!-- Editable Table Name (disabled for summary) -->
+                            <div v-if="editingTableName === `finals-${tableKey}` && !table.isReadOnly" class="flex items-center gap-2">
                                 <input 
                                     v-model="tempTableName"
                                     @blur="finishEditTableName('finals', tableKey)"
@@ -1238,15 +1527,18 @@ onMounted(() => {
                             </div>
                             <h5 
                                 v-else
-                                @click="startEditTableName('finals', tableKey)"
-                                class="font-semibold text-gray-900 cursor-pointer hover:text-green-600 hover:underline"
-                                title="Click to edit table name"
+                                @click="!table.isReadOnly && startEditTableName('finals', tableKey)"
+                                :class="[
+                                    'font-semibold text-gray-900',
+                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-green-600 hover:underline'
+                                ]"
+                                :title="table.isReadOnly ? 'Summary table (read-only)' : 'Click to edit table name'"
                             >
                                 {{ table.name }}
                             </h5>
                             
-                            <!-- Editable Table Percentage -->
-                            <div v-if="editingTablePercentage === `finals-${tableKey}`" class="flex items-center gap-1">
+                            <!-- Editable Table Percentage (disabled for summary) -->
+                            <div v-if="editingTablePercentage === `finals-${tableKey}` && !table.isReadOnly" class="flex items-center gap-1">
                                 <input 
                                     v-model.number="tempTablePercentage"
                                     @blur="finishEditTablePercentage('finals', tableKey)"
@@ -1261,20 +1553,24 @@ onMounted(() => {
                                 <span class="text-sm text-gray-600">%</span>
                             </div>
                             <span 
-                                v-else
-                                @click="startEditTablePercentage('finals', tableKey)"
-                                class="text-sm text-gray-600 bg-white px-3 py-1 rounded-full cursor-pointer hover:bg-green-100 hover:text-green-700"
-                                title="Click to edit percentage"
+                                v-else-if="!table.isSummary"
+                                @click="!table.isReadOnly && startEditTablePercentage('finals', tableKey)"
+                                :class="[
+                                    'text-sm text-gray-600 bg-white px-3 py-1 rounded-full',
+                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:bg-green-100 hover:text-green-700'
+                                ]"
+                                :title="table.isReadOnly ? 'Summary table (read-only)' : 'Click to edit percentage'"
                             >
                                 {{ table.percentage }}%
                             </span>
                             
-                            <span class="text-xs text-gray-500">
+                            <span v-if="!table.isSummary" class="text-xs text-gray-500">
                                 (Columns: {{ getColumnsTotalPercentage('finals', tableKey) }}% / {{ table.percentage }}%)
                             </span>
                         </div>
                         <div class="flex gap-2">
                             <button 
+                                v-if="!table.isReadOnly"
                                 @click="openAddColumnModal('finals', tableKey)"
                                 :disabled="!canAddColumn('finals', tableKey)"
                                 class="px-3 py-1 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:bg-gray-300"
@@ -1282,6 +1578,7 @@ onMounted(() => {
                                 + Column
                             </button>
                             <button 
+                                v-if="!table.isReadOnly"
                                 @click="deleteTable('finals', tableKey)"
                                 class="px-3 py-1 text-sm bg-red-600 text-white rounded hover:bg-red-700"
                             >
@@ -1302,8 +1599,8 @@ onMounted(() => {
                                         class="px-4 py-2 text-center text-sm font-semibold text-gray-700 border-b border-l"
                                     >
                                         <div class="flex items-center justify-center gap-2 mb-2">
-                                            <!-- Editable Column Name -->
-                                            <div v-if="editingColumnName === `finals-${tableKey}-${colIndex}`" class="flex items-center gap-1">
+                                            <!-- Editable Column Name (disabled for read-only tables) -->
+                                            <div v-if="editingColumnName === `finals-${tableKey}-${colIndex}` && !table.isReadOnly" class="flex items-center gap-1">
                                                 <input 
                                                     v-model="tempColumnName"
                                                     @blur="finishEditColumnName('finals', tableKey, colIndex)"
@@ -1315,15 +1612,17 @@ onMounted(() => {
                                             </div>
                                             <span 
                                                 v-else
-                                                @click="startEditColumnName('finals', tableKey, colIndex)"
-                                                class="cursor-pointer hover:text-green-600 hover:underline"
-                                                title="Click to edit column name"
+                                                @click="!table.isReadOnly && startEditColumnName('finals', tableKey, colIndex)"
+                                                :class="[
+                                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-green-600 hover:underline'
+                                                ]"
+                                                :title="table.isReadOnly ? 'Read-only column' : 'Click to edit column name'"
                                             >
                                                 {{ column.name }}
                                             </span>
                                             
-                                            <!-- Editable Column Percentage -->
-                                            <div v-if="editingColumnPercentage === `finals-${tableKey}-${colIndex}`" class="flex items-center gap-1">
+                                            <!-- Editable Column Percentage (disabled for read-only tables) -->
+                                            <div v-if="editingColumnPercentage === `finals-${tableKey}-${colIndex}` && !table.isReadOnly" class="flex items-center gap-1">
                                                 <span>(</span>
                                                 <input 
                                                     v-model.number="tempColumnPercentage"
@@ -1338,15 +1637,18 @@ onMounted(() => {
                                                 <span>%)</span>
                                             </div>
                                             <span 
-                                                v-else
-                                                @click="startEditColumnPercentage('finals', tableKey, colIndex)"
-                                                class="cursor-pointer hover:text-green-600 hover:underline"
-                                                title="Click to edit percentage"
+                                                v-else-if="!table.isSummary"
+                                                @click="!table.isReadOnly && startEditColumnPercentage('finals', tableKey, colIndex)"
+                                                :class="[
+                                                    table.isReadOnly ? 'cursor-default' : 'cursor-pointer hover:text-green-600 hover:underline'
+                                                ]"
+                                                :title="table.isReadOnly ? 'Read-only column' : 'Click to edit percentage'"
                                             >
                                                 ({{ column.percentage }}%)
                                             </span>
                                             
                                             <button 
+                                                v-if="!table.isReadOnly"
                                                 @click="openAddSubcolumnModal('finals', tableKey, colIndex)"
                                                 class="text-xs px-2 py-1 bg-green-500 text-white rounded hover:bg-green-600"
                                                 title="Add Subcolumn"
@@ -1354,6 +1656,7 @@ onMounted(() => {
                                                 + Sub
                                             </button>
                                             <button 
+                                                v-if="!table.isReadOnly"
                                                 @click="deleteColumn('finals', tableKey, colIndex)"
                                                 class="text-red-600 hover:text-red-800"
                                             >
@@ -1438,15 +1741,24 @@ onMounted(() => {
                                 </tr>
                             </thead>
                             <tbody>
-                                <tr v-for="student in students" :key="student.id" class="hover:bg-gray-50">
-                                    <td class="px-4 py-2 border-b text-sm">{{ student.first_name }} {{ student.last_name }}</td>
+                                <tr v-for="student in props.students" :key="student.id" class="hover:bg-gray-50">
+                                    <td class="px-4 py-2 border-b text-sm">{{ student.name }}</td>
                                     <template v-for="column in table.columns" :key="column.id">
                                         <td 
                                             v-for="subcolumn in column.subcolumns" 
                                             :key="subcolumn.id"
                                             class="px-2 py-2 border-b border-l"
                                         >
+                                            <!-- Read-only display for Summary table -->
+                                            <div 
+                                                v-if="table.isSummary"
+                                                class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700"
+                                            >
+                                                {{ calculateStudentTableTotal(student.id, 'finals', tableKey) }}
+                                            </div>
+                                            <!-- Editable input for other tables -->
                                             <input 
+                                                v-else
                                                 v-model="studentGrades[student.id].finals[`${tableKey}-${column.id}-${subcolumn.id}`]"
                                                 type="number"
                                                 :max="subcolumn.maxPoints"
@@ -1478,8 +1790,8 @@ onMounted(() => {
                 <div class="bg-green-50 border border-green-200 rounded-lg p-4">
                     <h5 class="font-semibold text-green-900 mb-3">Finals Period Grades</h5>
                     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                        <div v-for="student in students" :key="student.id" class="bg-white p-3 rounded-lg border border-green-200">
-                            <p class="text-sm text-gray-700">{{ student.first_name }} {{ student.last_name }}</p>
+                        <div v-for="student in props.students" :key="student.id" class="bg-white p-3 rounded-lg border border-green-200">
+                            <p class="text-sm text-gray-700">{{ student.name }}</p>
                             <p class="text-2xl font-bold text-green-600">{{ calculateStudentPeriodGrade(student.id, 'finals') }}</p>
                         </div>
                     </div>
