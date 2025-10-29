@@ -9,10 +9,11 @@ const props = defineProps({
     classwork: Array,
     students: Array,
     classworks: Array,
+    announcements: Array,
 });
 
-// Restore active tab from sessionStorage or default to 'stream'
-const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'stream');
+// Restore active tab from sessionStorage or default to 'classwork'
+const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'classwork');
 const showClassworkModal = ref(false);
 const editingClasswork = ref(null);
 const showDeleteConfirm = ref(false);
@@ -35,6 +36,11 @@ const classworkForm = useForm({
     rubric_criteria: [],
     quiz_questions: [],
     attachments: [],
+    show_correct_answers: false,
+    grading_period: '',
+    grade_table_name: '',
+    grade_main_column: '',
+    grade_sub_column: '',
 });
 
 // Rubric and Quiz management
@@ -42,9 +48,11 @@ const rubricCriteria = ref([]);
 const quizQuestions = ref([]);
 const fileAttachments = ref([]);
 
+// Material filter
+const materialFilter = ref('all');
+
 const tabs = [
-    { id: 'stream', name: 'Stream' },
-    { id: 'classwork', name: 'Classwork' },
+    { id: 'classwork', name: 'Classroom' },
     { id: 'people', name: 'People' },
     { id: 'gradebook', name: 'Gradebook' },
     { id: 'class-record', name: 'Class Record' },
@@ -56,10 +64,12 @@ watch(activeTab, (newTab) => {
 });
 
 const classworkTypes = [
-    { value: 'lesson', label: 'Lesson', color: '#3b82f6', icon: '�' },
+    { value: 'lesson', label: 'Lesson', color: '#3b82f6', icon: '📚' },
     { value: 'assignment', label: 'Assignment', color: '#eab308', icon: '📝' },
     { value: 'quiz', label: 'Quiz', color: '#ef4444', icon: '📋' },
     { value: 'activity', label: 'Activity', color: '#10b981', icon: '🎯' },
+    { value: 'essay', label: 'Essay', color: '#8b5cf6', icon: '✍️' },
+    { value: 'project', label: 'Project', color: '#f97316', icon: '🚀' },
 ];
 
 const questionTypes = [
@@ -80,6 +90,49 @@ const latestMaterials = computed(() => {
     return props.classwork?.slice(0, 5) || [];
 });
 
+// Filtered materials based on materialFilter
+const filteredMaterials = computed(() => {
+    if (!props.classwork) return [];
+    
+    if (materialFilter.value === 'all') {
+        return props.classwork;
+    }
+    
+    // Filter by type
+    return props.classwork.filter(item => {
+        const type = item.type.toLowerCase();
+        const filter = materialFilter.value.toLowerCase();
+        
+        if (filter === 'materials') {
+            return type === 'lesson';
+        } else if (filter === 'tasks') {
+            return type === 'assignment';
+        } else if (filter === 'quizzes') {
+            return type === 'quiz';
+        } else if (filter === 'activities') {
+            return type === 'activity';
+        } else if (filter === 'essays') {
+            return type === 'essay';
+        } else if (filter === 'projects') {
+            return type === 'project';
+        }
+        
+        return true;
+    });
+});
+
+// Filtered announcements based on materialFilter
+const filteredAnnouncements = computed(() => {
+    if (!props.announcements) return [];
+    
+    // Only show announcements when filter is 'all' or 'materials'
+    if (materialFilter.value === 'all' || materialFilter.value === 'materials') {
+        return props.announcements;
+    }
+    
+    return [];
+});
+
 const isQuizType = computed(() => classworkForm.type === 'quiz');
 
 const totalRubricPoints = computed(() => {
@@ -88,6 +141,42 @@ const totalRubricPoints = computed(() => {
 
 const totalQuizPoints = computed(() => {
     return quizQuestions.value.reduce((sum, question) => sum + (parseInt(question.points) || 0), 0);
+});
+
+// Get available grading periods from gradebook
+const availableGradingPeriods = computed(() => {
+    const periods = [];
+    if (props.course?.gradebook) {
+        if (props.course.gradebook.midterm) periods.push({ value: 'midterm', label: 'Midterm' });
+        if (props.course.gradebook.finals) periods.push({ value: 'finals', label: 'Finals' });
+    }
+    return periods;
+});
+
+// Get available grade tables for selected grading period
+const availableGradeTables = computed(() => {
+    if (!classworkForm.grading_period || !props.course?.gradebook) return [];
+    const periodData = props.course.gradebook[classworkForm.grading_period];
+    if (!periodData || !periodData.tables) return [];
+    return periodData.tables.map(table => ({
+        value: table.name,
+        label: table.name
+    }));
+});
+
+// Get available main columns for selected grade table
+const availableMainColumns = computed(() => {
+    if (!classworkForm.grading_period || !classworkForm.grade_table_name || !props.course?.gradebook) return [];
+    const periodData = props.course.gradebook[classworkForm.grading_period];
+    if (!periodData || !periodData.tables) return [];
+    
+    const table = periodData.tables.find(t => t.name === classworkForm.grade_table_name);
+    if (!table || !table.columns) return [];
+    
+    return table.columns.map(col => ({
+        value: col.name,
+        label: col.name
+    }));
 });
 
 // Watch for type changes to reset rubric/quiz data
@@ -104,12 +193,24 @@ watch(() => classworkForm.type, (newType) => {
         quizQuestions.value = [];
         rubricCriteria.value = [];
         classworkForm.due_date = null;
+        // Clear gradebook fields for lessons
+        classworkForm.grading_period = '';
+        classworkForm.grade_table_name = '';
+        classworkForm.grade_main_column = '';
+        classworkForm.grade_sub_column = '';
     } else {
         // Activities and assignments have rubric criteria but no quiz
         quizQuestions.value = [];
         if (rubricCriteria.value.length === 0) {
             addRubricCriteria();
         }
+    }
+});
+
+// Watch for title changes to auto-generate sub-column name
+watch(() => classworkForm.title, (newTitle) => {
+    if (newTitle && classworkForm.type !== 'lesson' && classworkForm.grade_main_column) {
+        classworkForm.grade_sub_column = newTitle.substring(0, 30); // Limit to 30 chars
     }
 });
 
@@ -144,6 +245,11 @@ const openEditModal = (classwork) => {
     classworkForm.points = classwork.points;
     classworkForm.has_submission = classwork.has_submission;
     classworkForm.status = classwork.status;
+    classworkForm.show_correct_answers = classwork.show_correct_answers || false;
+    classworkForm.grading_period = classwork.grading_period || '';
+    classworkForm.grade_table_name = classwork.grade_table_name || '';
+    classworkForm.grade_main_column = classwork.grade_main_column || '';
+    classworkForm.grade_sub_column = classwork.grade_sub_column || '';
     
     // Load rubric criteria or quiz questions
     if (classwork.type === 'quiz') {
@@ -154,7 +260,8 @@ const openEditModal = (classwork) => {
         quizQuestions.value = [];
     }
     
-    fileAttachments.value = [];
+    // Load existing attachments
+    fileAttachments.value = classwork.attachments || [];
     showClassworkModal.value = true;
 };
 
@@ -211,6 +318,7 @@ const addQuizQuestion = () => {
         type: 'multiple_choice',
         question: '',
         options: ['', '', '', ''],
+        option_labels: ['A', 'B', 'C', 'D'],
         correct_answer: '',
         correct_answers: [],
         points: 1,
@@ -222,11 +330,23 @@ const removeQuizQuestion = (index) => {
 };
 
 const addOption = (questionIndex) => {
-    quizQuestions.value[questionIndex].options.push('');
+    const question = quizQuestions.value[questionIndex];
+    if (!question.option_labels) {
+        question.option_labels = [];
+    }
+    
+    // Generate next letter (E, F, G, etc.)
+    const nextLetter = String.fromCharCode(65 + question.options.length); // 65 is 'A'
+    question.options.push('');
+    question.option_labels.push(nextLetter);
 };
 
 const removeOption = (questionIndex, optionIndex) => {
-    quizQuestions.value[questionIndex].options.splice(optionIndex, 1);
+    const question = quizQuestions.value[questionIndex];
+    question.options.splice(optionIndex, 1);
+    if (question.option_labels) {
+        question.option_labels.splice(optionIndex, 1);
+    }
 };
 
 const addEnumerationAnswer = (questionIndex) => {
@@ -465,7 +585,7 @@ const getFileExtension = (filename) => {
 };
 
 const isImage = (filename) => {
-    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'];
+    const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico', 'tiff', 'tif'];
     return imageExts.includes(getFileExtension(filename));
 };
 
@@ -474,8 +594,34 @@ const isPDF = (filename) => {
 };
 
 const isText = (filename) => {
-    const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'php', 'py'];
+    const textExts = ['txt', 'md', 'json', 'xml', 'html', 'css', 'js', 'php', 'py', 'java', 'cpp', 'c', 'h'];
     return textExts.includes(getFileExtension(filename));
+};
+
+const isWord = (filename) => {
+    const wordExts = ['doc', 'docx'];
+    return wordExts.includes(getFileExtension(filename));
+};
+
+const isExcel = (filename) => {
+    const excelExts = ['xls', 'xlsx', 'csv'];
+    return excelExts.includes(getFileExtension(filename));
+};
+
+const isPowerPoint = (filename) => {
+    const pptExts = ['ppt', 'pptx'];
+    return pptExts.includes(getFileExtension(filename));
+};
+
+const isOfficeDocument = (filename) => {
+    return isWord(filename) || isExcel(filename) || isPowerPoint(filename);
+};
+
+const getOfficeViewerUrl = (fileUrl) => {
+    // Use Microsoft Office Online Viewer for better compatibility
+    // Need to convert relative URL to absolute URL
+    const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
+    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
 };
 </script>
 
@@ -511,7 +657,7 @@ const isText = (filename) => {
                         <button
                             v-for="tab in tabs"
                             :key="tab.id"
-                            @click="tab.id === 'gradebook' ? $inertia.visit(route('teacher.courses.gradebook', course.id)) : activeTab = tab.id"
+                            @click="activeTab = tab.id"
                             :class="[
                                 'py-4 px-6 text-sm font-medium whitespace-nowrap transition-colors',
                                 activeTab === tab.id
@@ -526,156 +672,214 @@ const isText = (filename) => {
 
                 <!-- Tab Content -->
                 <div class="p-6">
-                    <!-- Stream Tab -->
-                    <div v-if="activeTab === 'stream'" class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                        <!-- To-do Section -->
-                        <div class="lg:col-span-2 space-y-4">
-                            <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                <h2 class="text-xl font-bold text-gray-900 mb-4">To-do</h2>
-                                <div v-if="todoItems.length === 0" class="text-gray-500 text-sm">
-                                    No pending tasks
-                                </div>
-                                <div v-else class="space-y-3">
-                                    <div
-                                        v-for="item in todoItems"
-                                        :key="item.id"
-                                        :class="['rounded-lg p-4', getTypeBorderClass(item.type)]"
-                                    >
-                                        <div class="flex items-start justify-between">
-                                            <div class="flex-1">
-                                                <div class="flex items-center gap-2">
-                                                    <h3 class="font-semibold text-gray-900">{{ item.title }}</h3>
-                                                    <span class="px-2 py-0.5 text-xs font-medium rounded" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
-                                                        {{ item.type }}
-                                                    </span>
-                                                </div>
-                                                <p v-if="item.description" class="text-sm text-gray-600 mt-1">{{ item.description }}</p>
-                                                <div class="flex items-center gap-4 mt-2 text-sm text-gray-600">
-                                                    <span v-if="item.due_date_formatted">
-                                                        <svg class="w-4 h-4 inline mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    <!-- Classwork Tab -->
+                    <div v-if="activeTab === 'classwork'">
+                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <!-- Left Side: Latest Materials (2/3 width) -->
+                            <div class="lg:col-span-2">
+                                <div class="bg-white rounded-lg shadow-md p-6">
+                                    <div class="flex justify-between items-center mb-6">
+                                        <h2 class="text-xl font-bold text-gray-900">Latest Materials</h2>
+                                        <select 
+                                            v-model="materialFilter"
+                                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 text-sm"
+                                        >
+                                            <option value="all">All</option>
+                                            <option value="materials">Materials</option>
+                                            <option value="tasks">Tasks</option>
+                                            <option value="quizzes">Quizzes</option>
+                                            <option value="activities">Activities</option>
+                                            <option value="essays">Essays</option>
+                                            <option value="projects">Projects</option>
+                                        </select>
+                                    </div>
+
+                                    <!-- Materials List -->
+                                    <div v-if="filteredMaterials.length === 0 && filteredAnnouncements.length === 0" class="text-center py-12 text-gray-500">
+                                        <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        <p class="text-lg">No materials found</p>
+                                        <p class="text-sm mt-2">Try changing the filter or add materials using the "To Do" section</p>
+                                    </div>
+
+                                    <div v-else class="space-y-4">
+                                        <!-- Announcements -->
+                                        <div
+                                            v-for="announcement in filteredAnnouncements"
+                                            :key="'announcement-' + announcement.id"
+                                            class="bg-white rounded-lg p-4 border-l-4 shadow hover:shadow-md transition"
+                                            :style="{ borderLeftColor: announcement.color || '#800000' }"
+                                        >
+                                            <div class="flex items-start justify-between">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-2">
+                                                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                                                         </svg>
+                                                        <h3 class="font-semibold text-gray-900">{{ announcement.title }}</h3>
+                                                        <span class="px-2 py-0.5 text-xs font-medium rounded uppercase bg-blue-100 text-blue-800">
+                                                            Announcement
+                                                        </span>
+                                                        <span v-if="announcement.target_audience === 'all_courses'" class="px-2 py-0.5 text-xs font-medium rounded bg-purple-100 text-purple-800">
+                                                            All Courses
+                                                        </span>
+                                                    </div>
+                                                    <p v-if="announcement.description" class="text-sm text-gray-600 mt-2">{{ announcement.description }}</p>
+                                                    <div class="flex items-center gap-4 mt-3 text-xs text-gray-500">
+                                                        <span class="flex items-center gap-1">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                            </svg>
+                                                            {{ announcement.author }}
+                                                        </span>
+                                                        <span class="flex items-center gap-1">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                            </svg>
+                                                            {{ announcement.date }}
+                                                        </span>
+                                                        <span v-if="announcement.time" class="flex items-center gap-1">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                            </svg>
+                                                            {{ announcement.time }}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Regular Materials -->
+                                        <div
+                                            v-for="item in filteredMaterials"
+                                            :key="item.id"
+                                            class="bg-white rounded-lg p-4 border-l-4 shadow hover:shadow-md transition"
+                                            :style="{ borderLeftColor: item.color_code || getTypeColor(item.type) }"
+                                        >
+                                            <div class="flex items-start justify-between">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-2">
+                                                        <h3 class="font-semibold text-gray-900">{{ item.title }}</h3>
+                                                        <span class="px-2 py-0.5 text-xs font-medium rounded uppercase" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
+                                                            {{ item.type }}
+                                                        </span>
+                                                    </div>
+                                                    <p v-if="item.description" class="text-sm text-gray-600 mt-1">{{ item.description }}</p>
+                                                    <p v-if="item.due_date_formatted" class="text-sm text-gray-600 mt-1">
                                                         Due: {{ item.due_date_formatted }}
-                                                    </span>
-                                                    <span v-if="item.points">{{ item.points }} points</span>
+                                                    </p>
+                                                    <div v-if="item.points" class="text-sm text-gray-600 mt-1">
+                                                        {{ item.points }} points
+                                                    </div>
+                                                    <div class="flex gap-3 mt-3">
+                                                        <span class="px-3 py-1 bg-blue-500 text-white text-xs rounded-lg">{{ item.submitted_count }} submitted</span>
+                                                        <span class="px-3 py-1 bg-green-500 text-white text-xs rounded-lg">{{ item.graded_count }} graded</span>
+                                                    </div>
+                                                </div>
+                                                <div class="flex gap-2">
+                                                    <button 
+                                                        @click="viewClasswork(item)" 
+                                                        class="p-2 hover:bg-gray-100 rounded" 
+                                                        title="View Submissions & Grade"
+                                                    >
+                                                        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button 
+                                                        @click="openEditModal(item)" 
+                                                        class="p-2 hover:bg-gray-100 rounded" 
+                                                        title="Edit"
+                                                    >
+                                                        <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                                        </svg>
+                                                    </button>
+                                                    <button 
+                                                        @click="confirmDelete(item)" 
+                                                        class="p-2 hover:bg-red-100 rounded text-red-600" 
+                                                        title="Delete"
+                                                    >
+                                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
                                                 </div>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Latest Materials & Activities -->
-                        <div>
-                            <div class="bg-white border border-gray-200 rounded-lg p-6">
-                                <h2 class="text-xl font-bold text-gray-900 mb-4">Latest Materials & Activities</h2>
-                                <div v-if="latestMaterials.length === 0" class="text-gray-500 text-sm">
-                                    No materials yet
-                                </div>
-                                <div v-else class="space-y-3">
-                                    <div
-                                        v-for="item in latestMaterials"
-                                        :key="item.id"
-                                        class="border-l-4 pl-3 py-2 hover:bg-gray-50 cursor-pointer transition"
-                                        :style="{ borderColor: item.color_code }"
-                                    >
-                                        <h4 class="font-medium text-gray-900 text-sm">{{ item.title }}</h4>
-                                        <p class="text-xs text-gray-600 mt-1">{{ item.type }} • {{ item.created_at }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Classwork Tab -->
-                    <div v-if="activeTab === 'classwork'">
-                        <div class="flex justify-between items-center mb-6">
-                            <h2 class="text-xl font-bold text-gray-900">Classwork</h2>
-                            <div class="flex gap-2">
-                                <select class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900">
-                                    <option>All</option>
-                                    <option>Materials</option>
-                                    <option>Tasks</option>
-                                    <option>Quizzes</option>
-                                    <option>Activities</option>
-                                </select>
-                                <button 
-                                    @click="openClassworkModal"
-                                    class="px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition flex items-center gap-2"
-                                >
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                                    </svg>
-                                    Add
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Classwork Items -->
-                        <div v-if="classwork.length === 0" class="text-center py-12 text-gray-500">
-                            <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                            </svg>
-                            <p class="text-lg">No classwork yet</p>
-                            <p class="text-sm mt-2">Click "Add" to create your first material, task, quiz, or activity</p>
-                        </div>
-
-                        <div v-else class="space-y-4">
-                            <div
-                                v-for="item in classwork"
-                                :key="item.id"
-                                :class="['rounded-lg p-4', getTypeBorderClass(item.type)]"
-                            >
-                                <div class="flex items-start justify-between">
-                                    <div class="flex-1">
-                                        <div class="flex items-center gap-2">
-                                            <h3 class="font-semibold text-gray-900">{{ item.title }}</h3>
-                                            <span class="px-2 py-0.5 text-xs font-medium rounded uppercase" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
-                                                {{ item.type }}
-                                            </span>
-                                        </div>
-                                        <p v-if="item.description" class="text-sm text-gray-600 mt-1">{{ item.description }}</p>
-                                        <p v-if="item.due_date_formatted" class="text-sm text-gray-600 mt-1">
-                                            Due: {{ item.due_date_formatted }}
-                                        </p>
-                                        <div v-if="item.points" class="text-sm text-gray-600 mt-1">
-                                            {{ item.points }} points
-                                        </div>
-                                        <div class="flex gap-3 mt-3">
-                                            <span class="px-3 py-1 bg-blue-500 text-white text-xs rounded-lg">{{ item.submitted_count }} submitted</span>
-                                            <span class="px-3 py-1 bg-green-500 text-white text-xs rounded-lg">{{ item.graded_count }} graded</span>
-                                        </div>
-                                    </div>
-                                    <div class="flex gap-2">
+                            <!-- Right Side: To Do List (1/3 width) -->
+                            <div class="lg:col-span-1">
+                                <div class="bg-white rounded-lg shadow-md p-6 sticky top-6">
+                                    <div class="flex justify-between items-center mb-4">
+                                        <h2 class="text-xl font-bold text-gray-900">To Do</h2>
                                         <button 
-                                            @click="viewClasswork(item)" 
-                                            class="p-2 hover:bg-gray-100 rounded" 
-                                            title="View Submissions & Grade"
-                                        >
-                                            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                            </svg>
-                                        </button>
-                                        <button 
-                                            @click="openEditModal(item)" 
-                                            class="p-2 hover:bg-gray-100 rounded" 
-                                            title="Edit"
-                                        >
-                                            <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                            </svg>
-                                        </button>
-                                        <button 
-                                            @click="confirmDelete(item)" 
-                                            class="p-2 hover:bg-red-100 rounded text-red-600" 
-                                            title="Delete"
+                                            @click="openClassworkModal"
+                                            class="flex items-center gap-2 px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition font-medium text-sm"
                                         >
                                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
                                             </svg>
+                                            Create Material
                                         </button>
+                                    </div>
+
+                                    <div class="space-y-3">
+                                        <!-- To Do Items (materials with submissions to grade) -->
+                                        <div v-if="classwork.filter(item => item.submitted_count > item.graded_count).length === 0" class="text-center py-8 text-gray-500">
+                                            <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                            </svg>
+                                            <p class="text-sm">All caught up!</p>
+                                            <p class="text-xs mt-1">No pending tasks</p>
+                                        </div>
+
+                                        <div
+                                            v-for="item in classwork.filter(item => item.submitted_count > item.graded_count)"
+                                            :key="item.id"
+                                            class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition cursor-pointer"
+                                            @click="viewClasswork(item)"
+                                        >
+                                            <div class="flex items-start justify-between">
+                                                <div class="flex-1 min-w-0">
+                                                    <h4 class="font-medium text-gray-900 text-sm truncate">{{ item.title }}</h4>
+                                                    <span class="inline-block px-2 py-0.5 text-xs font-medium rounded mt-1" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
+                                                        {{ item.type }}
+                                                    </span>
+                                                    <div class="flex items-center gap-2 mt-2">
+                                                        <span class="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded font-semibold">
+                                                            {{ item.submitted_count - item.graded_count }} to grade
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <svg class="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </div>
+                                        </div>
+
+                                        <!-- Upcoming Due Dates -->
+                                        <div class="mt-6 pt-4 border-t border-gray-200">
+                                            <h3 class="text-sm font-semibold text-gray-700 mb-3">Upcoming Due Dates</h3>
+                                            <div v-if="classwork.filter(item => item.due_date).length === 0" class="text-center py-4 text-gray-400 text-xs">
+                                                No upcoming deadlines
+                                            </div>
+                                            <div v-else class="space-y-2">
+                                                <div
+                                                    v-for="item in classwork.filter(item => item.due_date).slice(0, 5)"
+                                                    :key="'due-' + item.id"
+                                                    class="flex items-center justify-between text-xs"
+                                                >
+                                                    <span class="text-gray-700 truncate">{{ item.title }}</span>
+                                                    <span class="text-gray-500 text-xs ml-2 flex-shrink-0">{{ item.due_date_formatted }}</span>
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -808,6 +1012,7 @@ const isText = (filename) => {
                             :course="course"
                             :students="students"
                             :classworks="classworks"
+                            :gradebook="course.gradebook"
                         />
                     </div>
 
@@ -944,16 +1149,55 @@ const isText = (filename) => {
 
                                                     <!-- Multiple Choice Options -->
                                                     <div v-if="question.type === 'multiple_choice'" class="space-y-2">
-                                                        <div v-for="(option, oIndex) in question.options" :key="oIndex" class="flex gap-2">
-                                                            <input v-model="question.options[oIndex]" type="text" :placeholder="`Option ${oIndex + 1}`" class="flex-1 px-3 py-1 text-sm border border-gray-300 rounded-lg" />
-                                                            <button v-if="question.options.length > 2" type="button" @click="removeOption(qIndex, oIndex)" class="text-red-600 hover:text-red-800">
-                                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <label class="text-sm font-medium text-gray-700">Options:</label>
+                                                        <div v-for="(option, oIndex) in question.options" :key="oIndex" class="flex gap-2 items-center">
+                                                            <span class="w-8 h-8 flex items-center justify-center bg-red-100 text-red-700 font-semibold rounded-full text-sm flex-shrink-0">
+                                                                {{ question.option_labels?.[oIndex] || String.fromCharCode(65 + oIndex) }}
+                                                            </span>
+                                                            <input 
+                                                                v-model="question.options[oIndex]" 
+                                                                type="text" 
+                                                                :placeholder="`Enter option ${question.option_labels?.[oIndex] || String.fromCharCode(65 + oIndex)}`" 
+                                                                class="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500" 
+                                                            />
+                                                            <button 
+                                                                v-if="question.options.length > 2" 
+                                                                type="button" 
+                                                                @click="removeOption(qIndex, oIndex)" 
+                                                                class="text-red-600 hover:text-red-800 p-1"
+                                                            >
+                                                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                                                 </svg>
                                                             </button>
                                                         </div>
-                                                        <button type="button" @click="addOption(qIndex)" class="text-sm text-red-600 hover:text-red-800">+ Add Option</button>
-                                                        <input v-model="question.correct_answer" type="text" placeholder="Correct answer" class="w-full px-3 py-1 text-sm border border-green-300 rounded-lg bg-green-50" />
+                                                        <button 
+                                                            type="button" 
+                                                            @click="addOption(qIndex)" 
+                                                            class="text-sm text-red-600 hover:text-red-800 font-medium flex items-center gap-1"
+                                                        >
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                                            </svg>
+                                                            Add Option
+                                                        </button>
+                                                        
+                                                        <div class="pt-2">
+                                                            <label class="text-sm font-medium text-green-700 mb-2 block">Correct Answer:</label>
+                                                            <select 
+                                                                v-model="question.correct_answer" 
+                                                                class="w-full px-3 py-2 text-sm border-2 border-green-300 rounded-lg bg-green-50 focus:ring-2 focus:ring-green-500 font-medium"
+                                                            >
+                                                                <option value="">Select correct answer</option>
+                                                                <option 
+                                                                    v-for="(option, oIndex) in question.options" 
+                                                                    :key="oIndex" 
+                                                                    :value="question.option_labels?.[oIndex] || String.fromCharCode(65 + oIndex)"
+                                                                >
+                                                                    {{ question.option_labels?.[oIndex] || String.fromCharCode(65 + oIndex) }} - {{ option || '(empty)' }}
+                                                                </option>
+                                                            </select>
+                                                        </div>
                                                     </div>
 
                                                     <!-- True/False -->
@@ -997,6 +1241,21 @@ const isText = (filename) => {
                                                 </svg>
                                                 Add Question
                                             </button>
+
+                                            <!-- Show Correct Answers Toggle -->
+                                            <div class="mt-4 p-3 bg-white border border-green-300 rounded-lg">
+                                                <label class="flex items-center gap-3 cursor-pointer">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        v-model="classworkForm.show_correct_answers"
+                                                        class="w-4 h-4 text-green-600 border-gray-300 rounded focus:ring-green-500"
+                                                    />
+                                                    <div class="flex-1">
+                                                        <span class="text-sm font-medium text-gray-900">Show Correct Answers to Students</span>
+                                                        <p class="text-xs text-gray-500">Students can view correct answers after the quiz is graded</p>
+                                                    </div>
+                                                </label>
+                                            </div>
                                         </div>
 
                                         <!-- Rubric Criteria Section (for activities and assignments only, not lessons) -->
@@ -1072,6 +1331,83 @@ const isText = (filename) => {
                                             />
                                         </div>
 
+                                        <!-- Gradebook Integration (not for lessons) -->
+                                        <div v-if="classworkForm.type !== 'lesson'" class="border-2 border-blue-200 rounded-lg p-4 bg-blue-50 space-y-3">
+                                            <h4 class="font-semibold text-gray-900 flex items-center gap-2">
+                                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                                                </svg>
+                                                Grade Book Integration (Optional)
+                                            </h4>
+                                            <p class="text-xs text-gray-600">Link this task to your gradebook to automatically record student scores.</p>
+
+                                            <div class="grid grid-cols-2 gap-3">
+                                                <!-- Grading Period -->
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                        Grading Period
+                                                    </label>
+                                                    <select
+                                                        v-model="classworkForm.grading_period"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent text-sm"
+                                                    >
+                                                        <option value="">Select Period</option>
+                                                        <option v-for="period in availableGradingPeriods" :key="period.value" :value="period.value">
+                                                            {{ period.label }}
+                                                        </option>
+                                                    </select>
+                                                </div>
+
+                                                <!-- Grade Table -->
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                        Grade Table
+                                                    </label>
+                                                    <select
+                                                        v-model="classworkForm.grade_table_name"
+                                                        :disabled="!classworkForm.grading_period"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent text-sm disabled:bg-gray-100"
+                                                    >
+                                                        <option value="">Select Table</option>
+                                                        <option v-for="table in availableGradeTables" :key="table.value" :value="table.value">
+                                                            {{ table.label }}
+                                                        </option>
+                                                    </select>
+                                                </div>
+
+                                                <!-- Main Column -->
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                        Main Column
+                                                    </label>
+                                                    <select
+                                                        v-model="classworkForm.grade_main_column"
+                                                        :disabled="!classworkForm.grade_table_name"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent text-sm disabled:bg-gray-100"
+                                                    >
+                                                        <option value="">Select Column</option>
+                                                        <option v-for="column in availableMainColumns" :key="column.value" :value="column.value">
+                                                            {{ column.label }}
+                                                        </option>
+                                                    </select>
+                                                </div>
+
+                                                <!-- Sub Column (Auto-generated) -->
+                                                <div>
+                                                    <label class="block text-sm font-medium text-gray-700 mb-1">
+                                                        Sub Column Name
+                                                    </label>
+                                                    <input
+                                                        v-model="classworkForm.grade_sub_column"
+                                                        type="text"
+                                                        :disabled="!classworkForm.grade_main_column"
+                                                        placeholder="Auto-generated from title"
+                                                        class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent text-sm disabled:bg-gray-100"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         <!-- File Attachments (not for quizzes) -->
                                         <div v-if="classworkForm.type !== 'quiz'">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -1091,6 +1427,7 @@ const isText = (filename) => {
                                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
                                                             </svg>
                                                             {{ file.name }}
+                                                            <span v-if="file.path" class="text-xs text-green-600">(Existing)</span>
                                                         </span>
                                                         <button type="button" @click="removeFile(index)" class="text-red-600 hover:text-red-800">
                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1102,8 +1439,8 @@ const isText = (filename) => {
                                             </div>
                                         </div>
 
-                                        <!-- Has Submission (Hidden for lessons) -->
-                                        <div v-if="classworkForm.type !== 'lesson'" class="flex items-center">
+                                        <!-- Has Submission (Hidden for lessons and quizzes) -->
+                                        <div v-if="classworkForm.type !== 'lesson' && classworkForm.type !== 'quiz'" class="flex items-center">
                                             <input
                                                 id="has_submission"
                                                 v-model="classworkForm.has_submission"
@@ -1345,13 +1682,27 @@ const isText = (filename) => {
                     </div>
 
                     <!-- Image Preview -->
-                    <div v-else-if="fileBlob && isImage(previewFile?.name)" class="flex justify-center">
-                        <img :src="fileBlob" :alt="previewFile?.name" class="max-w-full h-auto rounded">
+                    <div v-else-if="fileBlob && isImage(previewFile?.name)" class="flex justify-center bg-gray-50 p-4 rounded">
+                        <img :src="fileBlob" :alt="previewFile?.name" class="max-w-full max-h-[70vh] h-auto rounded shadow-lg">
                     </div>
                     
                     <!-- PDF Preview -->
                     <div v-else-if="fileBlob && isPDF(previewFile?.name)" class="w-full h-[70vh]">
                         <iframe :src="fileBlob" class="w-full h-full border rounded"></iframe>
+                    </div>
+                    
+                    <!-- Office Documents Preview (Word, Excel, PowerPoint) -->
+                    <div v-else-if="fileBlob && isOfficeDocument(previewFile?.name)" class="w-full h-[70vh]">
+                        <iframe 
+                            :src="getOfficeViewerUrl(previewFile?.path)" 
+                            class="w-full h-full border rounded"
+                            frameborder="0"
+                        >
+                            Your browser does not support iframe preview.
+                        </iframe>
+                        <p class="text-xs text-gray-500 mt-2 text-center">
+                            If preview doesn't load, <a :href="fileBlob" :download="previewFile?.name" class="text-blue-600 hover:underline">download the file</a>
+                        </p>
                     </div>
                     
                     <!-- Text Preview -->

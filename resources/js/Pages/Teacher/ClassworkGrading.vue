@@ -399,6 +399,27 @@ const getFileIcon = (filename) => {
                                     </div>
                                 </div>
 
+                                <!-- Submitted Link -->
+                                <div v-if="selectedSubmission?.link">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Submitted Link
+                                    </label>
+                                    <a 
+                                        :href="selectedSubmission.link" 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        class="flex items-center gap-2 bg-blue-50 px-4 py-3 rounded-lg hover:bg-blue-100 transition text-blue-700 border border-blue-200"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                        </svg>
+                                        <span class="flex-1 text-sm font-medium break-all">{{ selectedSubmission.link }}</span>
+                                        <svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                        </svg>
+                                    </a>
+                                </div>
+
                                 <!-- Attachments -->
                                 <div v-if="selectedSubmission?.attachments && selectedSubmission.attachments.length > 0">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">
@@ -419,6 +440,69 @@ const getFileIcon = (filename) => {
                                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
                                             </svg>
                                         </button>
+                                    </div>
+                                </div>
+
+                                <!-- Quiz Questions & Answers (if applicable) -->
+                                <div v-if="classwork.type === 'quiz' && classwork.quiz_questions && classwork.quiz_questions.length > 0 && selectedSubmission?.quiz_answers">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                                        Quiz Answers
+                                    </label>
+                                    <div class="space-y-3 max-h-96 overflow-y-auto">
+                                        <div v-for="(question, index) in classwork.quiz_questions" :key="index" class="border rounded-lg p-3"
+                                             :class="question.correct_answer && selectedSubmission.quiz_answers[index] ? 
+                                                     (selectedSubmission.quiz_answers[index].toLowerCase().trim() === question.correct_answer.toLowerCase().trim() ? 'border-green-300 bg-green-50' : 'border-red-300 bg-red-50') : 
+                                                     'border-gray-200 bg-white'">
+                                            <div class="flex items-start justify-between mb-2">
+                                                <div>
+                                                    <span class="text-xs font-medium text-gray-500">Question {{ index + 1 }} ({{ question.type }})</span>
+                                                    <p class="text-sm font-medium text-gray-900 mt-1">{{ question.question }}</p>
+                                                </div>
+                                                <span class="text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded">{{ question.points }} pts</span>
+                                            </div>
+                                            
+                                            <!-- Student's Answer -->
+                                            <div class="mt-2 p-2 bg-white border border-gray-200 rounded">
+                                                <p class="text-xs font-medium text-gray-600 mb-1">Student's Answer:</p>
+                                                <p class="text-sm text-gray-900">{{ selectedSubmission.quiz_answers[index] || '(No answer)' }}</p>
+                                            </div>
+                                            
+                                            <!-- Correct Answer (if exists) -->
+                                            <div v-if="question.correct_answer" class="mt-2 p-2 bg-green-50 border border-green-200 rounded">
+                                                <p class="text-xs font-medium text-green-800 mb-1">Correct Answer:</p>
+                                                <p class="text-sm text-green-900 font-medium">{{ question.correct_answer }}</p>
+                                            </div>
+                                            
+                                            <!-- Manual grading for essay/short answer types -->
+                                            <div v-if="!question.correct_answer" class="mt-2">
+                                                <p class="text-xs text-orange-600 font-medium mb-1">⚠️ Requires Manual Grading</p>
+                                                <p class="text-xs text-gray-500">No auto-grading available for {{ question.type }} questions</p>
+                                            </div>
+                                            
+                                            <!-- Auto-graded result indicator -->
+                                            <div v-if="question.correct_answer && selectedSubmission.quiz_answers[index]" class="mt-2 flex items-center gap-2">
+                                                <span v-if="selectedSubmission.quiz_answers[index].toLowerCase().trim() === question.correct_answer.toLowerCase().trim()" 
+                                                      class="text-xs font-bold text-green-700 flex items-center gap-1">
+                                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                    Correct ({{ question.points }} pts)
+                                                </span>
+                                                <span v-else class="text-xs font-bold text-red-700 flex items-center gap-1">
+                                                    <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                                                    </svg>
+                                                    Incorrect (0 pts)
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div v-if="selectedSubmission.status === 'submitted'" class="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                                        <p class="text-sm text-blue-800">
+                                            <span class="font-medium">Auto-graded:</span> {{ selectedSubmission.grade || 0 }}/{{ classwork.points }} points
+                                        </p>
+                                        <p class="text-xs text-blue-600 mt-1">Review the answers and adjust the total grade if needed (especially for manually graded questions)</p>
                                     </div>
                                 </div>
 

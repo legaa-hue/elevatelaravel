@@ -100,4 +100,44 @@ class GradebookController extends Controller
 
         return redirect()->back()->with('success', 'Grades and gradebook saved successfully');
     }
+
+    public function save(Request $request, Course $course)
+    {
+        // Check if user is the teacher or admin
+        if (auth()->user()->role !== 'admin' && $course->teacher_id !== auth()->id()) {
+            abort(403, 'Unauthorized. Teacher or Admin access only.');
+        }
+
+        $validated = $request->validate([
+            'midtermPercentage' => 'nullable|numeric|min:0|max:100',
+            'finalsPercentage' => 'nullable|numeric|min:0|max:100',
+            'midterm' => 'required|array',
+            'midterm.tables' => 'required|array',
+            'midterm.grades' => 'required|array',
+            'finals' => 'required|array',
+            'finals.tables' => 'required|array',
+            'finals.grades' => 'required|array',
+        ]);
+
+        // Save the complete gradebook structure
+        $course->gradebook = $validated;
+        $course->save();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Gradebook saved successfully'
+        ]);
+    }
+
+    public function load(Course $course)
+    {
+        // Check if user is the teacher or admin
+        if (auth()->user()->role !== 'admin' && $course->teacher_id !== auth()->id()) {
+            abort(403, 'Unauthorized. Teacher or Admin access only.');
+        }
+
+        return response()->json([
+            'gradebook' => $course->gradebook
+        ]);
+    }
 }

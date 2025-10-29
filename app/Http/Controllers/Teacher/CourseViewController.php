@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Course;
 use App\Models\Classwork;
 use App\Models\ClassworkSubmission;
+use App\Models\Event;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Auth;
@@ -65,6 +66,7 @@ class CourseViewController extends Controller
                     'points' => $item->points,
                     'attachments' => $item->attachments,
                     'has_submission' => $item->has_submission,
+                    'show_correct_answers' => $item->show_correct_answers,
                     'status' => $item->status,
                     'color_code' => $item->color_code,
                     'created_by' => $item->creator->first_name . ' ' . $item->creator->last_name,
@@ -72,6 +74,10 @@ class CourseViewController extends Controller
                     'is_todo' => $item->has_submission || $item->due_date !== null,
                     'submitted_count' => $totalSubmissions,
                     'graded_count' => $gradedSubmissions,
+                    'grading_period' => $item->grading_period,
+                    'grade_table_name' => $item->grade_table_name,
+                    'grade_main_column' => $item->grade_main_column,
+                    'grade_sub_column' => $item->grade_sub_column,
                     'rubric_criteria' => $item->rubricCriteria->map(function ($criteria) {
                         return [
                             'id' => $criteria->id,
@@ -103,6 +109,7 @@ class CourseViewController extends Controller
                 'description' => $course->description,
                 'join_code' => $course->join_code,
                 'status' => $course->status,
+                'gradebook' => $course->gradebook,
                 'teacher' => [
                     'id' => $course->teacher->id,
                     'name' => $course->teacher->first_name . ' ' . $course->teacher->last_name,
@@ -202,6 +209,46 @@ class CourseViewController extends Controller
                 ->where('status', 'active')
                 ->orderBy('created_at')
                 ->get(['id', 'title', 'type', 'points']),
+            // Announcements for classroom tab
+            'announcements' => Event::where(function ($query) use ($course) {
+                    // Show announcements that are:
+                    // 1. For 'both' (all courses) by teachers who are assigned to this course
+                    // 2. For 'students' specifically for this course
+                    $query->where(function ($q) use ($course) {
+                        // Get teacher IDs who are assigned to this course (including course owner)
+                        $teacherIds = collect([$course->teacher_id])->merge(
+                            \DB::table('joined_courses')
+                                ->where('course_id', $course->id)
+                                ->where('role', 'Teacher')
+                                ->pluck('user_id')
+                        )->unique()->values();
+                        
+                        // Check if announcement is for 'both' and created by assigned teacher
+                        $q->where('target_audience', 'both')
+                          ->whereIn('user_id', $teacherIds);
+                    })->orWhere(function ($q) use ($course) {
+                        // Or course-specific announcement
+                        $q->where('target_audience', 'students')
+                          ->where('course_id', $course->id);
+                    });
+                })
+                ->with('user')
+                ->orderBy('created_at', 'desc')
+                ->get()
+                ->map(function ($event) {
+                    return [
+                        'id' => $event->id,
+                        'title' => $event->title,
+                        'description' => $event->description,
+                        'date' => $event->date->format('M d, Y'),
+                        'time' => $event->time ? \Carbon\Carbon::parse($event->time)->format('h:i A') : null,
+                        'category' => $event->category,
+                        'color' => $event->color,
+                        'target_audience' => $event->target_audience,
+                        'author' => $event->user ? $event->user->first_name . ' ' . $event->user->last_name : 'Unknown',
+                        'created_at' => $event->created_at->diffForHumans(),
+                    ];
+                }),
         ]);
     }
 }

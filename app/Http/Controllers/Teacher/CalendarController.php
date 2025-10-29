@@ -81,14 +81,22 @@ class CalendarController extends Controller
             'time' => 'nullable|date_format:H:i',
             'description' => 'required|string',
             'category' => 'required|in:general,meeting,academic,deadline,maintenance,urgent',
-            'is_deadline' => 'boolean',
+            'is_deadline' => 'nullable|boolean',
             'color' => 'required|string|max:7',
-            'target_audience' => 'required|in:all_courses,specific_course',
+            'target_audience' => 'required|in:teachers,students,both',
             'course_id' => 'nullable|exists:courses,id',
         ]);
 
         $validated['user_id'] = Auth::id();
         $validated['visibility'] = 'all'; // Teacher events are visible to their students
+        $validated['is_deadline'] = $request->boolean('is_deadline', false);
+        
+        // If target_audience is 'students' and course_id is provided, it's a specific course announcement
+        // If target_audience is 'both' and no course_id, it's for all courses
+        // If target_audience is 'students' and no course_id, set to 'both' for all courses
+        if ($validated['target_audience'] === 'students' && empty($validated['course_id'])) {
+            $validated['target_audience'] = 'both';
+        }
 
         Event::create($validated);
 
@@ -111,11 +119,13 @@ class CalendarController extends Controller
             'time' => 'nullable|date_format:H:i',
             'description' => 'required|string',
             'category' => 'required|in:general,meeting,academic,deadline,maintenance,urgent',
-            'is_deadline' => 'boolean',
+            'is_deadline' => 'nullable|boolean',
             'color' => 'required|string|max:7',
-            'target_audience' => 'required|in:all_courses,specific_course',
+            'target_audience' => 'required|in:teachers,students,both',
             'course_id' => 'nullable|exists:courses,id',
         ]);
+
+        $validated['is_deadline'] = $request->boolean('is_deadline', false);
 
         $event->update($validated);
 

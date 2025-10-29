@@ -22,15 +22,21 @@ class Classwork extends Model
         'points',
         'attachments',
         'has_submission',
+        'show_correct_answers',
         'status',
         'color_code',
         'created_by',
+        'grading_period',
+        'grade_table_name',
+        'grade_main_column',
+        'grade_sub_column',
     ];
 
     protected $casts = [
         'due_date' => 'datetime',
         'attachments' => 'array',
         'has_submission' => 'boolean',
+        'show_correct_answers' => 'boolean',
     ];
 
     /**

@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue';
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
@@ -19,6 +19,22 @@ const props = defineProps({
     }
 });
 
+// Page props for flash messages
+const page = usePage();
+const showSuccessMessage = ref(false);
+const successMessage = ref('');
+
+// Watch for flash messages
+watch(() => page.props.flash, (flash) => {
+    if (flash?.success) {
+        successMessage.value = flash.success;
+        showSuccessMessage.value = true;
+        setTimeout(() => {
+            showSuccessMessage.value = false;
+        }, 5000);
+    }
+}, { deep: true, immediate: true });
+
 // Modal state
 const showModal = ref(false);
 const isEditing = ref(false);
@@ -34,7 +50,7 @@ const form = ref({
     category: 'general',
     is_deadline: false,
     color: '#800000',
-    target_audience: 'all_courses',
+    target_audience: 'both',
     course_id: null,
 });
 
@@ -254,7 +270,7 @@ function saveEvent() {
         is_deadline: form.value.is_deadline,
         color: category.color,
         target_audience: form.value.target_audience,
-        course_id: form.value.target_audience === 'specific_course' ? form.value.course_id : null,
+        course_id: form.value.target_audience === 'students' ? form.value.course_id : null,
     };
 
     if (isEditing.value && currentEvent.value) {
@@ -315,7 +331,7 @@ function closeModal() {
         category: 'general',
         is_deadline: false,
         color: '#800000',
-        target_audience: 'all_courses',
+        target_audience: 'both',
         course_id: null,
     };
 }
@@ -347,6 +363,27 @@ const formatTime = (timeString) => {
 
     <TeacherLayout>
         <div class="space-y-6">
+            <!-- Success Message -->
+            <div 
+                v-if="showSuccessMessage"
+                class="bg-green-50 border-l-4 border-green-500 p-4 rounded-lg shadow-md animate-fade-in"
+            >
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-green-800 font-medium">{{ successMessage }}</p>
+                    <button 
+                        @click="showSuccessMessage = false"
+                        class="ml-auto text-green-500 hover:text-green-700"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
             <!-- Page Header -->
             <div class="bg-gradient-to-r from-red-900 to-red-700 rounded-lg shadow-lg p-6 md:p-8 text-white">
                 <div class="flex items-center gap-3 mb-2">
@@ -569,13 +606,13 @@ const formatTime = (timeString) => {
                                 class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent disabled:bg-gray-100"
                                 required
                             >
-                                <option value="all_courses">All Students (All Courses)</option>
-                                <option value="specific_course">Specific Course</option>
+                                <option value="both">All Students (All Courses)</option>
+                                <option value="students">Specific Course</option>
                             </select>
                         </div>
 
                         <!-- Course Selection -->
-                        <div v-if="form.target_audience === 'specific_course'">
+                        <div v-if="form.target_audience === 'students'">
                             <label class="block text-sm font-medium text-gray-700 mb-1">Select Course *</label>
                             <select
                                 v-model="form.course_id"

@@ -7,6 +7,7 @@ use App\Models\Course;
 use App\Models\JoinedCourse;
 use App\Models\Classwork;
 use App\Models\ClassworkSubmission;
+use App\Models\Event;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -154,11 +155,15 @@ class CourseController extends Controller
                         return [
                             'type' => $question->type,
                             'question' => $question->question,
+                            'options' => $question->options,
+                            'option_labels' => $question->option_labels,
+                            'correct_answer' => $question->correct_answer,
                             'points' => $question->points,
                             'order' => $question->order,
                         ];
                     }),
                     'has_submission' => $classwork->has_submission,
+                    'show_correct_answers' => $classwork->show_correct_answers,
                     'status' => $classwork->status,
                     'color_code' => $classwork->color_code ?? $classwork->color,
                     'created_by_name' => $classwork->creator->first_name . ' ' . $classwork->creator->last_name,
@@ -189,6 +194,47 @@ class CourseController extends Controller
             return $cw['submission'] && in_array($cw['submission']['status'], ['submitted', 'graded']);
         })->values();
 
+        // Get announcements for this course
+        $announcements = Event::where(function ($query) use ($course) {
+                // Show announcements that are:
+                // 1. For 'both' (all courses) by teachers who are assigned to this course
+                // 2. For 'students' specifically for this course
+                $query->where(function ($q) use ($course) {
+                    // Get teacher IDs who are assigned to this course (including course owner)
+                    $teacherIds = collect([$course->teacher_id])->merge(
+                        DB::table('joined_courses')
+                            ->where('course_id', $course->id)
+                            ->where('role', 'Teacher')
+                            ->pluck('user_id')
+                    )->unique()->values();
+                    
+                    // Check if announcement is for 'both' and created by assigned teacher
+                    $q->where('target_audience', 'both')
+                      ->whereIn('user_id', $teacherIds);
+                })->orWhere(function ($q) use ($course) {
+                    // Or course-specific announcement
+                    $q->where('target_audience', 'students')
+                      ->where('course_id', $course->id);
+                });
+            })
+            ->with('user')
+            ->orderBy('created_at', 'desc')
+            ->get()
+            ->map(function ($event) {
+                return [
+                    'id' => $event->id,
+                    'title' => $event->title,
+                    'description' => $event->description,
+                    'date' => \Carbon\Carbon::parse($event->date)->format('M d, Y'),
+                    'time' => $event->time ? \Carbon\Carbon::parse($event->time)->format('h:i A') : null,
+                    'category' => $event->category,
+                    'color' => $event->color,
+                    'target_audience' => $event->target_audience,
+                    'author' => $event->user ? $event->user->first_name . ' ' . $event->user->last_name : 'Unknown',
+                    'created_at' => $event->created_at->diffForHumans(),
+                ];
+            });
+
         return inertia('Student/CourseView', [
             'course' => [
                 'id' => $course->id,
@@ -202,6 +248,7 @@ class CourseController extends Controller
             'classworks' => $classworks,
             'pendingClassworks' => $pendingClassworks,
             'completedClassworks' => $completedClassworks,
+            'announcements' => $announcements,
         ]);
     }
 
@@ -228,25 +275,47 @@ class CourseController extends Controller
             return back()->withErrors(['error' => 'Cannot edit a graded submission.']);
         }
 
+        // Validate basic fields first
         $validated = $request->validate([
-            'content' => 'nullable|string',
-            'link' => 'nullable|url',
-            'attachments' => 'nullable|array',
-            'attachments.*' => 'file|max:10240', // 10MB max per file
+            'content' => 'nullable|string|max:10000',
+            'link' => 'nullable|url|max:500',
             'quiz_answers' => 'nullable|array',
         ]);
 
-        // Handle file uploads
+        // Handle file uploads with more lenient validation
         $uploadedFiles = [];
+        
+        // Get existing attachments if updating
+        if ($existingSubmission && $existingSubmission->attachments) {
+            $uploadedFiles = $existingSubmission->attachments;
+        }
+        
         if ($request->hasFile('attachments')) {
-            foreach ($request->file('attachments') as $file) {
-                $path = $file->store('submissions', 'public');
-                $uploadedFiles[] = [
-                    'name' => $file->getClientOriginalName(),
-                    'path' => $path,
-                    'size' => $file->getSize(),
-                    'type' => $file->getMimeType(),
-                ];
+            try {
+                // Validate files separately for better error messages
+                $fileValidation = $request->validate([
+                    'attachments' => 'array|max:10',
+                    'attachments.*' => 'file|mimes:pdf,doc,docx,xls,xlsx,ppt,pptx,txt,jpg,jpeg,png,gif,zip,rar|max:20480', // 20MB max per file
+                ], [
+                    'attachments.*.file' => 'One or more attachments is not a valid file.',
+                    'attachments.*.mimes' => 'File must be a PDF, document, image, or archive file.',
+                    'attachments.*.max' => 'File size must not exceed 20MB.',
+                ]);
+                
+                // Add new files to existing attachments
+                foreach ($request->file('attachments') as $file) {
+                    if ($file->isValid()) {
+                        $path = $file->store('submissions', 'public');
+                        $uploadedFiles[] = [
+                            'name' => $file->getClientOriginalName(),
+                            'path' => $path,
+                            'size' => $file->getSize(),
+                            'type' => $file->getMimeType(),
+                        ];
+                    }
+                }
+            } catch (\Exception $e) {
+                return back()->withErrors(['attachments' => 'Failed to upload files. Please ensure files are under 20MB and are valid file types (PDF, documents, images, or archives).']);
             }
         }
 

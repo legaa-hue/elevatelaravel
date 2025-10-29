@@ -131,7 +131,8 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     // Gradebook
     Route::get('/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'index'])->name('gradebook');
     Route::get('/courses/{course}/gradebook', [\App\Http\Controllers\Teacher\GradebookController::class, 'show'])->name('courses.gradebook');
-    Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'saveGrades'])->name('courses.gradebook.save');
+    Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'save'])->name('courses.gradebook.save');
+    Route::get('/courses/{course}/gradebook/load', [\App\Http\Controllers\Teacher\GradebookController::class, 'load'])->name('courses.gradebook.load');
     
     // Class Record for specific course
     Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');

@@ -15,6 +15,7 @@ class QuizQuestion extends Model
         'type',
         'question',
         'options',
+        'option_labels',
         'correct_answer',
         'correct_answers',
         'points',
@@ -23,6 +24,7 @@ class QuizQuestion extends Model
 
     protected $casts = [
         'options' => 'array',
+        'option_labels' => 'array',
         'correct_answers' => 'array',
         'points' => 'integer',
         'order' => 'integer',

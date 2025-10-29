@@ -65,7 +65,7 @@ class ClassworkController extends Controller
         ]);
 
         $validated = $request->validate([
-            'type' => 'required|in:lesson,assignment,quiz,activity',
+            'type' => 'required|in:lesson,assignment,quiz,activity,essay,project',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'due_date' => 'nullable|date',
@@ -75,6 +75,11 @@ class ClassworkController extends Controller
             'has_submission' => 'nullable|boolean',
             'status' => 'nullable|in:active,draft,archived',
             'color_code' => 'nullable|string|max:7',
+            'show_correct_answers' => 'nullable|boolean',
+            'grading_period' => 'nullable|in:midterm,finals',
+            'grade_table_name' => 'nullable|string|max:255',
+            'grade_main_column' => 'nullable|string|max:255',
+            'grade_sub_column' => 'nullable|string|max:255',
             'rubric_criteria' => 'nullable|array',
             'rubric_criteria.*.description' => 'required_with:rubric_criteria|string',
             'rubric_criteria.*.points' => 'required_with:rubric_criteria|integer|min:0',
@@ -119,12 +124,14 @@ class ClassworkController extends Controller
                 'assignment' => '#eab308',     // yellow-500
                 'quiz' => '#ef4444',     // red-500
                 'activity' => '#10b981', // green-500
+                'essay' => '#8b5cf6', // purple-500
+                'project' => '#f97316', // orange-500
                 default => '#3b82f6',
             };
         }
 
-        // Set has_submission to false for lessons
-        if ($validated['type'] === 'lesson') {
+        // Set has_submission to false for lessons and quizzes
+        if ($validated['type'] === 'lesson' || $validated['type'] === 'quiz') {
             $validated['has_submission'] = false;
         }
 
@@ -160,6 +167,7 @@ class ClassworkController extends Controller
                         'type' => $question['type'],
                         'question' => $question['question'],
                         'options' => $question['options'] ?? null,
+                        'option_labels' => $question['option_labels'] ?? null,
                         'correct_answer' => $question['correct_answer'] ?? null,
                         'correct_answers' => $question['correct_answers'] ?? null,
                         'points' => $question['points'],
@@ -184,6 +192,13 @@ class ClassworkController extends Controller
                     'target_audience' => 'students',
                     'visibility' => 'all',
                 ]);
+            }
+
+            // Auto-create subcolumn in gradebook if gradebook integration is enabled
+            if ($classwork->grading_period && $classwork->grade_table_name && 
+                $classwork->grade_main_column && $classwork->grade_sub_column) {
+                
+                $this->createGradebookSubcolumn($course, $classwork);
             }
 
             DB::commit();
@@ -225,7 +240,7 @@ class ClassworkController extends Controller
         }
 
         $validated = $request->validate([
-            'type' => 'sometimes|in:lesson,assignment,quiz,activity',
+            'type' => 'sometimes|in:lesson,assignment,quiz,activity,essay,project',
             'title' => 'sometimes|string|max:255',
             'description' => 'nullable|string',
             'due_date' => 'nullable|date',
@@ -235,6 +250,11 @@ class ClassworkController extends Controller
             'has_submission' => 'boolean',
             'status' => 'in:active,draft,archived',
             'color_code' => 'nullable|string|max:7',
+            'show_correct_answers' => 'nullable|boolean',
+            'grading_period' => 'nullable|in:midterm,finals',
+            'grade_table_name' => 'nullable|string|max:255',
+            'grade_main_column' => 'nullable|string|max:255',
+            'grade_sub_column' => 'nullable|string|max:255',
         ]);
 
         // Handle file uploads for update
@@ -362,18 +382,235 @@ class ClassworkController extends Controller
             'status' => 'in:graded,returned',
         ]);
 
-        $submission->update([
-            'grade' => $validated['grade'],
-            'feedback' => $validated['feedback'] ?? null,
-            'rubric_scores' => $validated['rubric_scores'] ?? null,
-            'status' => $validated['status'] ?? 'graded',
-            'graded_at' => now(),
-            'graded_by' => Auth::id(),
-        ]);
+        DB::beginTransaction();
+        try {
+            $submission->update([
+                'grade' => $validated['grade'],
+                'feedback' => $validated['feedback'] ?? null,
+                'rubric_scores' => $validated['rubric_scores'] ?? null,
+                'status' => $validated['status'] ?? 'graded',
+                'graded_at' => now(),
+                'graded_by' => Auth::id(),
+            ]);
 
-        return redirect()->route('teacher.courses.classwork.show', [
-            'course' => $course->id,
-            'classwork' => $classwork->id
-        ])->with('success', 'Grade saved successfully.');
+            // Automatically update gradebook if this classwork has gradebook integration
+            if ($classwork->grading_period && $classwork->grade_table_name && 
+                $classwork->grade_main_column && $classwork->grade_sub_column) {
+                
+                $this->updateGradebook($course, $classwork, $submission);
+            }
+
+            DB::commit();
+
+            return redirect()->route('teacher.courses.classwork.show', [
+                'course' => $course->id,
+                'classwork' => $classwork->id
+            ])->with('success', 'Grade saved successfully and gradebook updated.');
+        } catch (\Exception $e) {
+            DB::rollBack();
+            logger()->error('Error grading submission', [
+                'error' => $e->getMessage(),
+                'submission_id' => $submission->id,
+                'classwork_id' => $classwork->id,
+            ]);
+            
+            return redirect()->back()->with('error', 'Failed to save grade: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Update gradebook with submission grade
+     */
+    private function updateGradebook(Course $course, Classwork $classwork, ClassworkSubmission $submission)
+    {
+        $gradebook = $course->gradebook ?? [];
+        
+        // Get the grading period data (midterm or finals)
+        $period = $classwork->grading_period; // 'midterm' or 'finals'
+        
+        if (!isset($gradebook[$period])) {
+            $gradebook[$period] = ['tables' => [], 'grades' => []];
+        }
+        
+        // Find the table
+        $tableIndex = null;
+        foreach ($gradebook[$period]['tables'] as $index => $table) {
+            if ($table['name'] === $classwork->grade_table_name) {
+                $tableIndex = $index;
+                break;
+            }
+        }
+        
+        if ($tableIndex === null) {
+            logger()->warning('Grade table not found in gradebook', [
+                'period' => $period,
+                'table_name' => $classwork->grade_table_name,
+            ]);
+            return;
+        }
+        
+        // Find the main column
+        $columnIndex = null;
+        foreach ($gradebook[$period]['tables'][$tableIndex]['columns'] as $index => $column) {
+            if ($column['name'] === $classwork->grade_main_column) {
+                $columnIndex = $index;
+                break;
+            }
+        }
+        
+        if ($columnIndex === null) {
+            logger()->warning('Grade column not found in gradebook', [
+                'period' => $period,
+                'column_name' => $classwork->grade_main_column,
+            ]);
+            return;
+        }
+        
+        // Find or create the subcolumn
+        $subcolumnIndex = null;
+        $subcolumns = $gradebook[$period]['tables'][$tableIndex]['columns'][$columnIndex]['subcolumns'] ?? [];
+        
+        foreach ($subcolumns as $index => $subcolumn) {
+            if ($subcolumn['name'] === $classwork->grade_sub_column) {
+                $subcolumnIndex = $index;
+                break;
+            }
+        }
+        
+        // If subcolumn doesn't exist, create it
+        if ($subcolumnIndex === null) {
+            $subcolumnIndex = count($subcolumns);
+            $gradebook[$period]['tables'][$tableIndex]['columns'][$columnIndex]['subcolumns'][] = [
+                'name' => $classwork->grade_sub_column,
+                'maxPoints' => $classwork->points,
+                'autoPopulated' => true,
+                'classwork_id' => $classwork->id,
+            ];
+        }
+        
+        // Initialize grades array for this student if not exists
+        $studentId = $submission->student_id;
+        if (!isset($gradebook[$period]['grades'][$studentId])) {
+            $gradebook[$period]['grades'][$studentId] = [];
+        }
+        
+        if (!isset($gradebook[$period]['grades'][$studentId][$tableIndex])) {
+            $gradebook[$period]['grades'][$studentId][$tableIndex] = [];
+        }
+        
+        if (!isset($gradebook[$period]['grades'][$studentId][$tableIndex][$columnIndex])) {
+            $gradebook[$period]['grades'][$studentId][$tableIndex][$columnIndex] = [];
+        }
+        
+        // Set the grade for this student in this subcolumn
+        $gradebook[$period]['grades'][$studentId][$tableIndex][$columnIndex][$subcolumnIndex] = $submission->grade;
+        
+        // Save the updated gradebook
+        $course->update(['gradebook' => $gradebook]);
+        
+        logger()->info('Gradebook updated successfully', [
+            'student_id' => $studentId,
+            'period' => $period,
+            'table' => $classwork->grade_table_name,
+            'column' => $classwork->grade_main_column,
+            'subcolumn' => $classwork->grade_sub_column,
+            'grade' => $submission->grade,
+        ]);
+    }
+
+    /**
+     * Create a subcolumn in the gradebook when classwork is created
+     */
+    private function createGradebookSubcolumn(Course $course, Classwork $classwork)
+    {
+        $gradebook = $course->gradebook ?? [];
+        
+        // Get the grading period data (midterm or finals)
+        $period = $classwork->grading_period;
+        
+        if (!isset($gradebook[$period])) {
+            logger()->warning('Grading period not found in gradebook', [
+                'period' => $period,
+                'classwork_id' => $classwork->id,
+            ]);
+            return;
+        }
+        
+        // Find the table
+        $tableIndex = null;
+        foreach ($gradebook[$period]['tables'] as $index => $table) {
+            if ($table['name'] === $classwork->grade_table_name) {
+                $tableIndex = $index;
+                break;
+            }
+        }
+        
+        if ($tableIndex === null) {
+            logger()->warning('Grade table not found in gradebook', [
+                'period' => $period,
+                'table_name' => $classwork->grade_table_name,
+                'classwork_id' => $classwork->id,
+            ]);
+            return;
+        }
+        
+        // Find the main column
+        $columnIndex = null;
+        foreach ($gradebook[$period]['tables'][$tableIndex]['columns'] as $index => $column) {
+            if ($column['name'] === $classwork->grade_main_column) {
+                $columnIndex = $index;
+                break;
+            }
+        }
+        
+        if ($columnIndex === null) {
+            logger()->warning('Grade column not found in gradebook', [
+                'period' => $period,
+                'column_name' => $classwork->grade_main_column,
+                'classwork_id' => $classwork->id,
+            ]);
+            return;
+        }
+        
+        // Check if subcolumn already exists
+        $subcolumns = $gradebook[$period]['tables'][$tableIndex]['columns'][$columnIndex]['subcolumns'] ?? [];
+        $subcolumnExists = false;
+        
+        foreach ($subcolumns as $subcolumn) {
+            if ($subcolumn['name'] === $classwork->grade_sub_column) {
+                $subcolumnExists = true;
+                break;
+            }
+        }
+        
+        // If subcolumn doesn't exist, create it
+        if (!$subcolumnExists) {
+            $gradebook[$period]['tables'][$tableIndex]['columns'][$columnIndex]['subcolumns'][] = [
+                'name' => $classwork->grade_sub_column,
+                'maxPoints' => $classwork->points ?? 100,
+                'autoPopulated' => true,
+                'classwork_id' => $classwork->id,
+            ];
+            
+            // Save the updated gradebook
+            $course->update(['gradebook' => $gradebook]);
+            
+            logger()->info('Gradebook subcolumn created successfully', [
+                'period' => $period,
+                'table' => $classwork->grade_table_name,
+                'column' => $classwork->grade_main_column,
+                'subcolumn' => $classwork->grade_sub_column,
+                'max_points' => $classwork->points ?? 100,
+                'classwork_id' => $classwork->id,
+            ]);
+        } else {
+            logger()->info('Gradebook subcolumn already exists', [
+                'period' => $period,
+                'table' => $classwork->grade_table_name,
+                'column' => $classwork->grade_main_column,
+                'subcolumn' => $classwork->grade_sub_column,
+                'classwork_id' => $classwork->id,
+            ]);
+        }
     }
 }
