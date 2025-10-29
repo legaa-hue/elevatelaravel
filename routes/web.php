@@ -137,6 +137,10 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     
     // Class Record for specific course
     Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');
+
+    // Grade Sheet PDF and Download for Teacher
+    Route::get('/class-record/{course}/grade-sheet/pdf', [\App\Http\Controllers\Teacher\GradeSheetController::class, 'viewPdf'])->name('class-record.grade-sheet.pdf');
+    Route::get('/class-record/{course}/grade-sheet/download', [\App\Http\Controllers\Teacher\GradeSheetController::class, 'downloadPdf'])->name('class-record.grade-sheet.download');
     
     // Calendar
     Route::get('/calendar', [\App\Http\Controllers\Teacher\CalendarController::class, 'index'])->name('calendar');
@@ -145,10 +149,8 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::delete('/calendar/{event}', [\App\Http\Controllers\Teacher\CalendarController::class, 'destroy'])->name('calendar.destroy');
     Route::patch('/calendar/{event}/datetime', [\App\Http\Controllers\Teacher\CalendarController::class, 'updateDateTime'])->name('calendar.updateDateTime');
     
-    // Class Record
-    Route::get('/class-record', function () {
-        return Inertia::render('Teacher/ClassRecord');
-    })->name('class-record');
+    // Class Record (list all courses for current user: owned and joined)
+    Route::get('/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'index'])->name('class-record');
     
     // Reports
     Route::get('/reports', [\App\Http\Controllers\Teacher\ReportController::class, 'index'])->name('reports');

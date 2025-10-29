@@ -1,0 +1,8 @@
+// Teacher grade sheet PDF and download routes
+use App\Http\Controllers\Teacher\GradeSheetController;
+
+Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('teacher.')->group(function () {
+    // ...existing teacher routes...
+    Route::get('/class-record/{course}/grade-sheet/pdf', [GradeSheetController::class, 'viewPdf'])->name('class-record.grade-sheet.pdf');
+    Route::get('/class-record/{course}/grade-sheet/download', [GradeSheetController::class, 'downloadPdf'])->name('class-record.grade-sheet.download');
+});

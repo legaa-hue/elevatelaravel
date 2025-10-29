@@ -10,6 +10,61 @@ use Inertia\Inertia;
 class ClassRecordController extends Controller
 {
     /**
+     * Show list of courses for class records (owned and joined by current user)
+     */
+    public function index()
+    {
+        $user = auth()->user();
+
+        // Courses the user owns (as primary teacher)
+        $myCourses = Course::with(['teacher', 'program', 'academicYear'])
+            ->withCount('students')
+            ->where('teacher_id', $user->id)
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($c) {
+                return [
+                    'id' => $c->id,
+                    'title' => $c->title,
+                    'section' => $c->section,
+                    'status' => $c->status,
+                    'students_count' => $c->students_count,
+                    'teacher' => [
+                        'first_name' => optional($c->teacher)->first_name,
+                        'last_name' => optional($c->teacher)->last_name,
+                    ],
+                ];
+            });
+
+        // Courses the user joined (as Teacher assistant or Student)
+        $joinedCourses = Course::with(['teacher', 'program', 'academicYear'])
+            ->withCount('students')
+            ->whereHas('joinedCourses', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            })
+            ->orderByDesc('id')
+            ->get()
+            ->map(function ($c) {
+                return [
+                    'id' => $c->id,
+                    'title' => $c->title,
+                    'section' => $c->section,
+                    'status' => $c->status,
+                    'students_count' => $c->students_count,
+                    'teacher' => [
+                        'first_name' => optional($c->teacher)->first_name,
+                        'last_name' => optional($c->teacher)->last_name,
+                    ],
+                ];
+            });
+
+        return Inertia::render('Teacher/ClassRecord', [
+            'myCourses' => $myCourses,
+            'joinedCourses' => $joinedCourses,
+        ]);
+    }
+
+    /**
      * Display class record for a specific course
      */
     public function show(Course $course)
