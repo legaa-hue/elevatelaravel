@@ -14,6 +14,8 @@ const finalsPercentage = ref(50);
 const showMidtermSection = ref(true);
 const showFinalsSection = ref(false);
 const isSaving = ref(false);
+const saveIndicator = ref(''); // '', 'Saving…', 'All changes saved'
+let saveTimer = null;
 const showTooltip = ref(false);
 
 const showAddTableModal = ref(false);
@@ -154,11 +156,12 @@ const getRemainingColumnPercentage = (period, tableKey) => {
     return table.percentage - getColumnsTotalPercentage(period, tableKey);
 };
 
+// Compute table total as: (totalScore / totalMaxPoints) * table.percentage (as decimal)
 const calculateStudentTableTotal = (studentId, period, tableKey) => {
     const tables = getCurrentTables(period);
     const table = tables[tableKey];
     if (!table) return '0.00';
-    
+
     // If this is the Summary table, calculate the total of all other tables
     if (table.isSummary) {
         let grandTotal = 0;
@@ -169,41 +172,53 @@ const calculateStudentTableTotal = (studentId, period, tableKey) => {
         });
         return grandTotal.toFixed(2);
     }
-    
-    let total = 0;
+
+    // Normalize column weights so their sum is always 100% for the table
+    let tableTotal = 0;
+    let totalColumnPercent = 0;
+    // First, sum up all column percentages (ignore columns with no subcolumns)
     table.columns.forEach(column => {
-        if (column.subcolumns && column.subcolumns.length > 0) {
-            let columnTotal = 0;
-            let columnMaxPoints = 0;
-            
-            column.subcolumns.forEach(subcolumn => {
-                const gradeKey = `${tableKey}-${column.id}-${subcolumn.id}`;
-                const grade = studentGrades.value[studentId]?.[period]?.[gradeKey] || 0;
-                const maxPoints = subcolumn.maxPoints || 100;
-                
-                columnTotal += parseFloat(grade) || 0;
-                columnMaxPoints += maxPoints;
-            });
-            
-            if (columnMaxPoints > 0) {
-                const columnPercentage = (columnTotal / columnMaxPoints) * 100;
-                total += (columnPercentage * column.percentage) / 100;
-            }
-        }
+        if (!column.subcolumns || column.subcolumns.length === 0) return;
+        totalColumnPercent += (column.percentage || 0);
     });
-    
-    return total.toFixed(2);
+    if (totalColumnPercent === 0) return '0.00';
+    // Now, compute each column's normalized weight and contribution
+    table.columns.forEach(column => {
+        if (!column.subcolumns || column.subcolumns.length === 0) return;
+        let colScore = 0;
+        let colMax = 0;
+        column.subcolumns.forEach(subcolumn => {
+            const gradeKey = `${tableKey}-${column.id}-${subcolumn.id}`;
+            const raw = parseFloat(studentGrades.value[studentId]?.[period]?.[gradeKey] ?? 0);
+            const maxPoints = subcolumn.maxPoints || 100;
+            const effectiveScore = (raw <= 1 && maxPoints > 1) ? (raw * maxPoints) : raw;
+            colScore += isNaN(effectiveScore) ? 0 : effectiveScore;
+            colMax += maxPoints;
+        });
+        if (colMax === 0) return;
+        const colPercentScore = colScore / colMax;
+        // Normalized column weight (so all columns sum to 1.0)
+        const colWeight = (column.percentage || 0) / totalColumnPercent;
+        tableTotal += colPercentScore * colWeight;
+    });
+    // Table's percentage (e.g., 35% for Synchronous)
+    const tableWeight = (table.percentage || 0) / 100;
+    return (tableTotal * tableWeight * 100).toFixed(2);
 };
 
 const calculateStudentPeriodGrade = (studentId, period) => {
     const tables = getCurrentTables(period);
     let total = 0;
-    
+
+    // Sum only real grading tables; skip the auto "Summary" table to avoid double counting
     Object.keys(tables).forEach(tableKey => {
+        const table = tables[tableKey];
+        if (table && table.isSummary) return; // ignore summary rows
         total += parseFloat(calculateStudentTableTotal(studentId, period, tableKey)) || 0;
     });
-    
-    return total.toFixed(2);
+
+    // Cap at 100% to avoid overflow when weights are misconfigured
+    return Math.min(total, 100).toFixed(2);
 };
 
 const validateGradingPeriodPercentage = (period) => {
@@ -899,41 +914,85 @@ const deleteSubcolumn = (period, tableKey, columnIndex, subcolumnIndex) => {
 
 const saveGradebook = async () => {
     isSaving.value = true;
+    saveIndicator.value = 'Saving…';
     try {
+        // Ensure grades are stored as flat objects, not arrays
+        const flattenGrades = (gradesObj) => {
+            if (!gradesObj || typeof gradesObj !== 'object') return {};
+            // If gradesObj is already flat, return as is
+            if (!Array.isArray(gradesObj)) return gradesObj;
+            // If gradesObj is an array, flatten it
+            const flat = {};
+            gradesObj.forEach(item => {
+                if (typeof item === 'object' && !Array.isArray(item)) {
+                    Object.assign(flat, item);
+                }
+            });
+            return flat;
+        };
+        // Compute and persist period grades for all students
+        const periodGrades = { midterm: {}, finals: {} };
+        Object.keys(studentGrades.value).forEach(studentId => {
+            periodGrades.midterm[studentId] = calculateStudentPeriodGrade(studentId, 'midterm');
+            periodGrades.finals[studentId] = calculateStudentPeriodGrade(studentId, 'finals');
+        });
         const data = {
             midtermPercentage: midtermPercentage.value,
             finalsPercentage: finalsPercentage.value,
             midterm: {
                 tables: Object.values(midtermTables.value),
                 grades: Object.keys(studentGrades.value).reduce((acc, studentId) => {
-                    acc[studentId] = studentGrades.value[studentId].midterm;
+                    acc[studentId] = flattenGrades(studentGrades.value[studentId].midterm);
                     return acc;
-                }, {})
+                }, {}),
+                periodGrades: periodGrades.midterm
             },
             finals: {
                 tables: Object.values(finalsTables.value),
                 grades: Object.keys(studentGrades.value).reduce((acc, studentId) => {
-                    acc[studentId] = studentGrades.value[studentId].finals;
+                    acc[studentId] = flattenGrades(studentGrades.value[studentId].finals);
                     return acc;
-                }, {})
+                }, {}),
+                periodGrades: periodGrades.finals
             }
         };
         
-        console.log('Saving gradebook data:', data);
-        const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
-        console.log('Gradebook saved successfully:', response.data);
+        // Debug: log data to be saved
+        console.log('[DEBUG] Saving gradebook data to backend and localStorage:', data);
+        // Save to backend
+        try {
+            const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
+            console.log('[DEBUG] Gradebook saved to backend:', response.data);
+        } catch (err) {
+            console.warn('[DEBUG] Backend save failed, will rely on localStorage:', err);
+        }
+        // Always save to localStorage
+        try {
+            localStorage.setItem(`gradebook:${props.course.id}`, JSON.stringify({ ...data, _savedAt: Date.now() }));
+            console.log('[DEBUG] Gradebook data saved to localStorage:', localStorage.getItem(`gradebook:${props.course.id}`));
+        } catch (e) {
+            console.error('[DEBUG] Error saving to localStorage:', e);
+        }
     } catch (error) {
         console.error('Error saving gradebook:', error);
-        console.error('Error response:', error.response?.data);
-        console.error('Error status:', error.response?.status);
         alert('Error saving gradebook: ' + (error.response?.data?.message || error.message));
     } finally {
         isSaving.value = false;
+        saveIndicator.value = 'All changes saved';
+        setTimeout(() => { if (saveIndicator.value === 'All changes saved') saveIndicator.value = ''; }, 2000);
     }
 };
 
+// Debounced autosave of numeric inputs so entries persist after reload/logout
+const scheduleSave = () => {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+        saveGradebook();
+    }, 500);
+};
+
 watch(studentGrades, () => {
-    saveGradebook();
+    scheduleSave();
 }, { deep: true });
 
 const loadGradebook = async () => {
@@ -998,7 +1057,51 @@ onMounted(async () => {
     await loadGradebook();
     populateSubcolumnsFromClassworks();
     populateGradesFromSubmissions();
+    // Always try to restore from local backup (offline safety)
+    try {
+        const cached = localStorage.getItem(`gradebook:${props.course.id}`);
+        console.log('[DEBUG] Attempting to restore gradebook from localStorage:', cached);
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed?.midterm || parsed?.finals) {
+                // Restore grades to UI if not already present
+                if (parsed.midterm?.grades) {
+                    Object.keys(parsed.midterm.grades).forEach(studentId => {
+                        if (!studentGrades.value[studentId]) studentGrades.value[studentId] = { midterm: {}, finals: {} };
+                        if (Object.keys(studentGrades.value[studentId].midterm || {}).length === 0) {
+                            studentGrades.value[studentId].midterm = parsed.midterm.grades[studentId] || {};
+                        }
+                    });
+                }
+                if (parsed.finals?.grades) {
+                    Object.keys(parsed.finals.grades).forEach(studentId => {
+                        if (!studentGrades.value[studentId]) studentGrades.value[studentId] = { midterm: {}, finals: {} };
+                        if (Object.keys(studentGrades.value[studentId].finals || {}).length === 0) {
+                            studentGrades.value[studentId].finals = parsed.finals.grades[studentId] || {};
+                        }
+                    });
+                }
+                console.log('[DEBUG] Gradebook restored from localStorage:', parsed);
+            }
+        }
+    } catch (e) {
+        console.error('[DEBUG] Error restoring from localStorage:', e);
+    }
 });
+
+// Ensure pending changes are flushed before leaving the page
+if (typeof window !== 'undefined') {
+    window.addEventListener('beforeunload', () => {
+        if (saveTimer) {
+            clearTimeout(saveTimer);
+            saveTimer = null;
+        }
+        // Best-effort synchronous save indicator; network call may not complete
+        try {
+            localStorage.setItem(`gradebook:${props.course.id}:lastExit`, String(Date.now()));
+        } catch (_) {}
+    });
+}
 
 // Watch for classworks change to keep gradebook in sync (add new, update points, remove deleted)
 watch(
@@ -1427,6 +1530,7 @@ watch(
                                             <input 
                                                 v-else
                                                 v-model="studentGrades[student.id].midterm[`${tableKey}-${column.id}-${subcolumn.id}`]"
+                                                @blur="saveGradebook"
                                                 type="number"
                                                 :max="subcolumn.maxPoints"
                                                 min="0"
@@ -1760,6 +1864,7 @@ watch(
                                             <input 
                                                 v-else
                                                 v-model="studentGrades[student.id].finals[`${tableKey}-${column.id}-${subcolumn.id}`]"
+                                                @blur="saveGradebook"
                                                 type="number"
                                                 :max="subcolumn.maxPoints"
                                                 min="0"

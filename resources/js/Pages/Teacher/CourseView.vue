@@ -746,29 +746,42 @@ const getRemarkClass = (finalGrade) => {
 };
 
 // Class Record Program Type Toggle
-const programType = ref('masteral'); // 'masteral' or 'doctorate'
+// Persist the selected program type per-course in localStorage so the teacher's choice
+// is remembered when navigating away and back.
+const programType = ref(localStorage.getItem(`courseProgramType_${props.course.id}`) || 'masteral'); // 'masteral' or 'doctorate'
 const passingGrade = computed(() => programType.value === 'masteral' ? 1.75 : 1.45);
 
+// Persist changes to localStorage
+watch(programType, (newVal) => {
+    try {
+        localStorage.setItem(`courseProgramType_${props.course.id}`, newVal);
+    } catch (e) {
+        // ignore storage errors (e.g., private mode)
+        console.warn('Could not persist programType', e);
+    }
+});
+
+// Boolean helper to drive the toggle switch (true = doctorate)
+const isDoctorate = computed({
+    get: () => programType.value === 'doctorate',
+    set: (val) => { programType.value = val ? 'doctorate' : 'masteral'; }
+});
+
 // Class Record Grade Calculation Functions
+// Use the computed period grade from the gradebook summary (Midterm Period Grades)
 const getMidtermGrade = (studentId) => {
     const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.midterm || !gradebook.midterm.grades) return 0;
-    
-    const studentGrades = gradebook.midterm.grades[studentId];
-    if (!studentGrades) return 0;
-    
-    // Calculate from all midterm grades
-    let totalScore = 0;
-    let count = 0;
-    
-    Object.values(studentGrades).forEach(grade => {
-        if (grade && !isNaN(parseFloat(grade))) {
-            totalScore += parseFloat(grade);
-            count++;
-        }
-    });
-    
-    return count > 0 ? totalScore / count : 0;
+    if (!gradebook || !gradebook.midterm) return 0;
+    // If periodGrades summary exists, use it
+    if (gradebook.midterm.periodGrades && gradebook.midterm.periodGrades[studentId] !== undefined) {
+        return gradebook.midterm.periodGrades[studentId];
+    }
+    // Fallback: try to use the summary table total if available
+    if (gradebook.midterm.summary && gradebook.midterm.summary[studentId] !== undefined) {
+        return gradebook.midterm.summary[studentId];
+    }
+    // Otherwise, fallback to 0
+    return 0;
 };
 
 const getFinalsGrade = (studentId) => {
@@ -871,6 +884,24 @@ const printClassRecord = () => {
                     <!-- Classwork Tab -->
                     <div v-if="activeTab === 'classwork'">
                         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            <!-- Midterm Period Grades Table -->
+                            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                                <h2 class="text-lg font-bold text-gray-900 mb-4">Midterm Period Grades</h2>
+                                <table class="w-full border-collapse">
+                                    <thead>
+                                        <tr class="bg-gray-100">
+                                            <th class="px-6 py-3 text-left font-bold border-b">Student Name</th>
+                                            <th class="px-6 py-3 text-center font-bold border-b">Midterm Grade</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-for="student in students" :key="student.id" class="hover:bg-gray-50">
+                                            <td class="px-6 py-3 border-b">{{ student.name }}</td>
+                                            <td class="px-6 py-3 border-b text-center font-semibold">{{ getMidtermGrade(student.id).toFixed(2) }}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
                             <!-- Left Side: Latest Materials (2/3 width) -->
                             <div class="lg:col-span-2">
                                 <div class="bg-white rounded-lg shadow-md p-6">
@@ -1215,7 +1246,7 @@ const printClassRecord = () => {
                     <!-- Class Record Tab -->
                     <div v-if="activeTab === 'class-record'" class="space-y-6">
                         <!-- Header Section -->
-                        <div class="bg-white rounded-lg shadow-md p-6">
+                        <div :class="['bg-white rounded-lg shadow-md p-6', isDoctorate ? 'border-t-4 border-red-600' : 'border-t-4 border-blue-600']">
                             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
                                 <div>
                                     <h2 class="text-2xl font-bold text-gray-900">Class Record</h2>
@@ -1224,8 +1255,28 @@ const printClassRecord = () => {
                                 <div class="flex flex-col md:flex-row md:items-center gap-2">
                                     <div class="flex items-center gap-2">
                                         <span class="font-medium text-gray-700">Program Type:</span>
-                                        <button @click="programType.value = 'masteral'" :class="['px-3 py-1 rounded-l border', programType.value === 'masteral' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700']">Masteral</button>
-                                        <button @click="programType.value = 'doctorate'" :class="['px-3 py-1 rounded-r border', programType.value === 'doctorate' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-700']">Doctorate</button>
+
+                                        <!-- Accessible toggle switch: Masteral <-> Doctorate -->
+                                        <div class="flex items-center gap-3">
+                                            <span class="text-sm text-gray-600">Masteral</span>
+
+                                            <button
+                                                type="button"
+                                                role="switch"
+                                                :aria-checked="isDoctorate"
+                                                @click="isDoctorate = !isDoctorate"
+                                                class="relative inline-flex items-center h-6 w-12 rounded-full transition-colors focus:outline-none"
+                                                :class="isDoctorate ? 'bg-red-600' : 'bg-blue-600'"
+                                                :title="isDoctorate ? 'Doctorate' : 'Masteral'"
+                                            >
+                                                <span
+                                                    class="inline-block bg-white w-5 h-5 rounded-full shadow transform transition-transform"
+                                                    :class="isDoctorate ? 'translate-x-6' : 'translate-x-1'"
+                                                />
+                                            </button>
+
+                                            <span class="text-sm text-gray-600">Doctorate</span>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -1236,20 +1287,20 @@ const printClassRecord = () => {
                             <div class="overflow-x-auto">
                                 <table class="w-full border-collapse">
                                     <thead>
-                                        <tr class="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
-                                            <th class="px-6 py-4 text-left border border-blue-500 font-bold">
+                                        <tr :class="isDoctorate ? 'bg-gradient-to-r from-red-700 to-red-600 text-white' : 'bg-gradient-to-r from-blue-600 to-blue-700 text-white'">
+                                            <th :class="isDoctorate ? 'px-6 py-4 text-left border border-red-500 font-bold' : 'px-6 py-4 text-left border border-blue-500 font-bold'">
                                                 Student Name
                                             </th>
-                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                            <th :class="isDoctorate ? 'px-6 py-4 text-center border border-red-500 font-bold' : 'px-6 py-4 text-center border border-blue-500 font-bold'">
                                                 Program
                                             </th>
-                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                            <th :class="isDoctorate ? 'px-6 py-4 text-center border border-red-500 font-bold' : 'px-6 py-4 text-center border border-blue-500 font-bold'">
                                                 Midterm Grade
                                             </th>
-                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                            <th :class="isDoctorate ? 'px-6 py-4 text-center border border-red-500 font-bold' : 'px-6 py-4 text-center border border-blue-500 font-bold'">
                                                 Final Grade
                                             </th>
-                                            <th class="px-6 py-4 text-center border border-blue-500 font-bold">
+                                            <th :class="isDoctorate ? 'px-6 py-4 text-center border border-red-500 font-bold' : 'px-6 py-4 text-center border border-blue-500 font-bold'">
                                                 Remarks
                                             </th>
                                         </tr>

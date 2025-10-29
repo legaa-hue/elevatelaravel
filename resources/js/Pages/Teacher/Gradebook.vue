@@ -603,7 +603,7 @@ const removeSubcolumnFromCustom = (tableId, columnId, subcolumnId) => {
     }
 };
 
-// Calculate column grade for custom table
+// Calculate column grade for custom table (average of item percentages, then weighted by column %)
 const calculateCustomColumnGrade = (studentId, tableId, columnId) => {
     const periodKey = activeGradingPeriod.value;
     const grades = studentGrades.value[studentId]?.[periodKey] || {};
@@ -615,33 +615,42 @@ const calculateCustomColumnGrade = (studentId, tableId, columnId) => {
     const column = table.columns.find(c => c.id === columnId);
     if (!column || column.subcolumns.length === 0) return 0;
     
-    // Calculate average of subcolumns
-    let totalScore = 0;
-    let totalMax = 0;
+    // Calculate average of per-item percentages (each item contributes equally to the subcomponent)
+    let sumItemPercentages = 0;
+    const itemsCount = column.subcolumns.length;
     
     column.subcolumns.forEach(subcol => {
         const subKey = `${key}-${subcol.id}`;
-        const score = grades[subKey] || 0;
-        totalScore += parseFloat(score);
-        totalMax += subcol.maxPoints || 100;
+        const score = parseFloat(grades[subKey] || 0);
+        const maxPoints = subcol.maxPoints || 100;
+        const itemPct = maxPoints > 0 ? (score / maxPoints) * 100 : 0;
+        sumItemPercentages += itemPct;
     });
     
-    const rawPercentage = totalMax > 0 ? (totalScore / totalMax) * 100 : 0;
-    const weighted = (rawPercentage / 100) * (column.percentage || 0);
+    const averagePercentage = itemsCount > 0 ? (sumItemPercentages / itemsCount) : 0;
+    const weighted = (averagePercentage / 100) * (column.percentage || 0);
     
     return weighted.toFixed(2);
 };
 
 // Calculate table total for custom table
+// If no grades/items, table contributes zero
 const calculateCustomTableTotal = (studentId, tableId) => {
     const table = activeCustomTables.value.find(t => t.id === tableId);
     if (!table) return 0;
-    
+
     let total = 0;
+    let hasAnyGrade = false;
     table.columns.forEach(column => {
+        column.subcolumns.forEach(subcol => {
+            const periodKey = activeGradingPeriod.value;
+            const grades = studentGrades.value[studentId]?.[periodKey] || {};
+            const key = `custom-${tableId}-${column.id}-${subcol.id}`;
+            if (grades[key] && !isNaN(parseFloat(grades[key]))) hasAnyGrade = true;
+        });
         total += parseFloat(calculateCustomColumnGrade(studentId, tableId, column.id) || 0);
     });
-    
+    if (!hasAnyGrade) return '0.00';
     return total.toFixed(2);
 };
 
@@ -725,6 +734,7 @@ const validateGradingPeriodPercentage = (period) => {
 };
 
 // Calculate student's grade for a specific column
+// For non-exam tables: average the percent across items (subcolumns), then multiply by column %
 const calculateColumnGrade = (studentId, tableKey, columnId) => {
     const periodKey = activeGradingPeriod.value;
     const grades = studentGrades.value[studentId]?.[periodKey] || {};
@@ -748,49 +758,71 @@ const calculateColumnGrade = (studentId, tableKey, columnId) => {
     // Regular handling for other tables with subcolumns
     if (column.subcolumns.length === 0) return 0;
     
-    // Calculate average of subcolumns
-    let totalScore = 0;
-    let totalMax = 0;
+    // Calculate average of per-item percentages (each item contributes equally to the subcomponent)
+    let sumItemPercentages = 0;
+    const itemsCount = column.subcolumns.length;
     
     column.subcolumns.forEach(subcol => {
         const subKey = `${key}-${subcol.id}`;
-        const score = grades[subKey] || 0;
-        totalScore += parseFloat(score);
-        totalMax += subcol.maxPoints || 100;
+        const score = parseFloat(grades[subKey] || 0);
+        const maxPoints = subcol.maxPoints || 100;
+        const itemPct = maxPoints > 0 ? (score / maxPoints) * 100 : 0;
+        sumItemPercentages += itemPct;
     });
     
-    const rawPercentage = totalMax > 0 ? (totalScore / totalMax) * 100 : 0;
-    const weighted = (rawPercentage / 100) * (column.percentage || 0);
+    const averagePercentage = itemsCount > 0 ? (sumItemPercentages / itemsCount) : 0;
+    const weighted = (averagePercentage / 100) * (column.percentage || 0);
     
     return weighted.toFixed(2);
 };
 
 // Calculate student's total for a table
+// If the table has no items/grades, its contribution is zero
 const calculateTableTotal = (studentId, tableKey) => {
     const table = activeTables.value[tableKey];
     let total = 0;
-    
+    let hasAnyGrade = false;
+
     table.columns.forEach(column => {
+        // Check if any subcolumn has a grade entered
+        if (tableKey === 'majorExam') {
+            // Major Exam: single entry
+            const periodKey = activeGradingPeriod.value;
+            const grades = studentGrades.value[studentId]?.[periodKey] || {};
+            const key = `${tableKey}-${column.id}-exam`;
+            if (grades[key] && !isNaN(parseFloat(grades[key]))) hasAnyGrade = true;
+        } else {
+            column.subcolumns.forEach(subcol => {
+                const periodKey = activeGradingPeriod.value;
+                const grades = studentGrades.value[studentId]?.[periodKey] || {};
+                const key = `${tableKey}-${column.id}-${subcol.id}`;
+                if (grades[key] && !isNaN(parseFloat(grades[key]))) hasAnyGrade = true;
+            });
+        }
         total += parseFloat(calculateColumnGrade(studentId, tableKey, column.id) || 0);
     });
-    
+
+    // If no grades/items at all, table contributes zero
+    if (!hasAnyGrade) return '0.00';
     return total.toFixed(2);
 };
 
 // Calculate final grade for grading period
+// Only sum tables that have at least one graded item, and cap at 100%
 const calculatePeriodGrade = (studentId) => {
     if (!activeTables.value) return 0;
-    
+
     let total = 0;
     Object.keys(activeTables.value).forEach(tableKey => {
         total += parseFloat(calculateTableTotal(studentId, tableKey) || 0);
     });
-    
+
     activeCustomTables.value.forEach(table => {
         total += parseFloat(calculateCustomTableTotal(studentId, table.id) || 0);
     });
-    
-    return total.toFixed(2);
+
+    // Cap at 100%
+    return Math.min(total, 100).toFixed(2);
 };
 
 // Update grade for a subcolumn
