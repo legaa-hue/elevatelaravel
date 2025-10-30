@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 import axios from 'axios';
 
 const props = defineProps({
@@ -197,49 +198,90 @@ const getCardColorClass = (color) => {
         <div class="space-y-6 p-4 md:p-0">
             <!-- Header -->
             <div class="flex flex-col gap-4">
-                <div>
+                <div class="flex items-center gap-2">
                     <h1 class="text-2xl md:text-3xl font-bold text-gray-900">Reports Overview</h1>
-                    <p class="mt-2 text-sm md:text-base text-gray-600">Generate and export system reports</p>
+                    <InfoTooltip 
+                        title="Reports Overview"
+                        content="Generate comprehensive system reports for users, courses, academic years, audit logs, and performance metrics. Export reports in multiple formats (CSV, Excel, PDF) for analysis."
+                        position="right"
+                    />
+                    <p class="mt-2 text-sm md:text-base text-gray-600 ml-2">Generate and export system reports</p>
                 </div>
                 
                 <!-- Export Buttons -->
                 <div class="flex flex-wrap gap-2">
-                    <button
-                        @click="exportReport('csv')"
-                        class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm md:text-base font-medium transition flex items-center justify-center gap-2"
-                    >
-                        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        CSV
-                    </button>
-                    <button
-                        @click="exportReport('excel')"
-                        class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm md:text-base font-medium transition flex items-center justify-center gap-2"
-                    >
-                        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        Excel
-                    </button>
-                    <button
-                        @click="exportReport('pdf')"
-                        class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm md:text-base font-medium transition flex items-center justify-center gap-2"
-                    >
-                        <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        PDF
-                    </button>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="exportReport('csv')"
+                            class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-green-600 hover:bg-green-700 hover:scale-105 text-white rounded-lg text-sm md:text-base font-medium transition-all flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            CSV
+                        </button>
+                        <InfoTooltip 
+                            title="Export to CSV"
+                            content="Download the current report data as a CSV (Comma-Separated Values) file. Compatible with Excel, Google Sheets, and other spreadsheet applications."
+                            position="bottom"
+                        />
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="exportReport('excel')"
+                            class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-blue-600 hover:bg-blue-700 hover:scale-105 text-white rounded-lg text-sm md:text-base font-medium transition-all flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            Excel
+                        </button>
+                        <InfoTooltip 
+                            title="Export to Excel"
+                            content="Download the current report data as an Excel-compatible file for advanced data analysis and manipulation in Microsoft Excel."
+                            position="bottom"
+                        />
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="exportReport('pdf')"
+                            class="flex-1 sm:flex-none px-3 md:px-4 py-2 bg-red-600 hover:bg-red-700 hover:scale-105 text-white rounded-lg text-sm md:text-base font-medium transition-all flex items-center justify-center gap-2"
+                        >
+                            <svg class="w-4 h-4 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                            </svg>
+                            PDF
+                        </button>
+                        <InfoTooltip 
+                            title="Export to PDF"
+                            content="Download the current report as a PDF document for printing or professional presentation. Perfect for sharing formatted reports."
+                            position="bottom"
+                        />
+                    </div>
                 </div>
             </div>
 
             <!-- Filters -->
             <div class="bg-white rounded-lg shadow-md p-4 md:p-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Report Filters</h2>
+                    <InfoTooltip 
+                        title="Report Filters"
+                        content="Customize your report by selecting the report type and date range. Use filters to focus on specific time periods or data categories."
+                        position="right"
+                    />
+                </div>
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Report Type -->
                     <div class="lg:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Report Type</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Report Type</label>
+                            <InfoTooltip 
+                                title="Report Type Selector"
+                                content="Choose which type of report to generate: Users (user accounts), Courses (course data), Academic Year (year info), Audit Logs (system activity), or Performance (overall metrics)."
+                                position="top"
+                            />
+                        </div>
                         <select
                             v-model="selectedType"
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent"
@@ -252,7 +294,14 @@ const getCardColorClass = (color) => {
 
                     <!-- Date Range -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Start Date</label>
+                            <InfoTooltip 
+                                title="Start Date"
+                                content="Select the beginning date for the report data range. Leave empty to include all data from the earliest record."
+                                position="top"
+                            />
+                        </div>
                         <input
                             type="date"
                             v-model="startDate"
@@ -260,7 +309,14 @@ const getCardColorClass = (color) => {
                         />
                     </div>
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-medium text-gray-700">End Date</label>
+                            <InfoTooltip 
+                                title="End Date"
+                                content="Select the ending date for the report data range. Leave empty to include all data up to the current date."
+                                position="top"
+                            />
+                        </div>
                         <input
                             type="date"
                             v-model="endDate"
@@ -273,13 +329,13 @@ const getCardColorClass = (color) => {
                 <div class="flex flex-col sm:flex-row gap-2 mt-4">
                     <button
                         @click="applyDateFilter"
-                        class="flex-1 sm:flex-none px-4 py-2 bg-red-900 hover:bg-red-800 text-white rounded-lg font-medium transition text-sm md:text-base"
+                        class="flex-1 sm:flex-none px-4 py-2 bg-red-900 hover:bg-red-800 hover:scale-105 text-white rounded-lg font-medium transition-all text-sm md:text-base"
                     >
                         Apply Filters
                     </button>
                     <button
                         @click="resetFilters"
-                        class="flex-1 sm:flex-none px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-lg font-medium transition text-sm md:text-base"
+                        class="flex-1 sm:flex-none px-4 py-2 bg-gray-200 hover:bg-gray-300 hover:scale-105 text-gray-800 rounded-lg font-medium transition-all text-sm md:text-base"
                     >
                         Reset
                     </button>
@@ -294,6 +350,14 @@ const getCardColorClass = (color) => {
 
             <template v-else>
                 <!-- Summary Cards -->
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Summary Statistics</h2>
+                    <InfoTooltip 
+                        title="Summary Statistics"
+                        content="Quick overview statistics for the selected report type. These cards show key metrics at a glance based on your filters."
+                        position="right"
+                    />
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div
                         v-for="card in summaryCards"
@@ -313,9 +377,16 @@ const getCardColorClass = (color) => {
                 <!-- Data Table -->
                 <div class="bg-white rounded-lg shadow-md overflow-hidden">
                     <div class="px-4 md:px-6 py-4 border-b border-gray-200">
-                        <h2 class="text-lg md:text-xl font-semibold text-gray-900">
-                            {{ currentReportType?.icon }} {{ currentReportType?.label }} - Detailed View
-                        </h2>
+                        <div class="flex items-center gap-2">
+                            <h2 class="text-lg md:text-xl font-semibold text-gray-900">
+                                {{ currentReportType?.icon }} {{ currentReportType?.label }} - Detailed View
+                            </h2>
+                            <InfoTooltip 
+                                title="Detailed Data Table"
+                                content="Complete tabular view of all records matching your selected report type and filters. You can export this data using the buttons above."
+                                position="right"
+                            />
+                        </div>
                     </div>
 
                     <div class="overflow-x-auto">

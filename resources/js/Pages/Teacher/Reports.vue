@@ -2,6 +2,7 @@
 // Use Heroicons outline icons for a modern look
 import { AcademicCapIcon, ChartBarIcon, UserGroupIcon, CheckCircleIcon, XCircleIcon, ArrowTrendingUpIcon, CalendarIcon, DocumentArrowDownIcon, InboxIcon, ExclamationTriangleIcon, EnvelopeIcon } from '@heroicons/vue/24/outline';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 import { ref, watch, computed, onMounted } from 'vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
@@ -114,14 +115,7 @@ const exportReport = async (format) => {
         <input type="date" v-model="dateTo" class="px-3 py-2 border rounded focus:ring-2 focus:ring-blue-500" />
       </div>
 
-      <div class="flex items-center gap-2">
-        <button @click="exportReport('pdf')" class="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded shadow-sm transition">
-          <DocumentArrowDownIcon class="w-5 h-5" /> PDF
-        </button>
-        <button @click="exportReport('csv')" class="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded shadow-sm transition">
-          <DocumentArrowDownIcon class="w-5 h-5" /> Excel
-        </button>
-      </div>
+      <!-- Export buttons removed as requested -->
     </div>
 
     <div v-if="!selectedCourseId" class="p-8 text-center bg-white rounded shadow">
@@ -132,7 +126,15 @@ const exportReport = async (format) => {
       <!-- Overview Cards -->
       <div class="bg-white rounded-lg shadow p-6 border border-gray-100">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold flex items-center gap-2"><AcademicCapIcon class="w-6 h-6 text-blue-700" /> CLASS OVERVIEW</h2>
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <AcademicCapIcon class="w-6 h-6 text-blue-700" /> 
+            CLASS OVERVIEW
+            <InfoTooltip 
+              title="Class Overview"
+              content="Quick snapshot of your class performance including total students, average grades, pass/fail statistics, and overall trend indicators."
+              position="right"
+            />
+          </h2>
         </div>
         <div v-if="loading">Loading…</div>
         <div v-else-if="errorMsg" class="text-red-600">{{ errorMsg }}</div>
@@ -168,7 +170,15 @@ const exportReport = async (format) => {
       <!-- Grade Distribution -->
       <div class="bg-white rounded-lg shadow p-6 border border-gray-100">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold flex items-center gap-2"><ChartBarIcon class="w-6 h-6 text-indigo-700" /> GRADE DISTRIBUTION</h2>
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <ChartBarIcon class="w-6 h-6 text-indigo-700" /> 
+            GRADE DISTRIBUTION
+            <InfoTooltip 
+              title="Grade Distribution Chart"
+              content="Visual representation of how grades are distributed across your class. Each bar shows the percentage of students falling within specific grade ranges, helping identify class performance patterns."
+              position="right"
+            />
+          </h2>
         </div>
         <div class="space-y-2">
           <div v-for="row in distribution" :key="row.range" class="flex items-center gap-3">
@@ -184,7 +194,15 @@ const exportReport = async (format) => {
       <!-- Student Performance Table -->
       <div class="bg-white rounded-lg shadow p-6 overflow-x-auto border border-gray-100">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold flex items-center gap-2"><UserGroupIcon class="w-6 h-6 text-blue-700" /> STUDENT PERFORMANCE</h2>
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <UserGroupIcon class="w-6 h-6 text-blue-700" /> 
+            STUDENT PERFORMANCE
+            <InfoTooltip 
+              title="Student Performance Table"
+              content="Detailed list of all students showing weighted averages, grades, and remarks. Use action buttons to send feedback or warnings to individual students."
+              position="right"
+            />
+          </h2>
         </div>
         <table class="min-w-full">
           <thead>
@@ -204,13 +222,23 @@ const exportReport = async (format) => {
               <td class="py-2 px-3">{{ s.weightedAvg }}%</td>
               <td class="py-2 px-3">{{ s.grade }}</td>
               <td class="py-2 px-3">{{ s.remarks }}</td>
-              <td class="py-2 px-3 flex gap-2">
-                <button @click="sendFeedback(s)" class="px-2 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded flex items-center gap-1" title="Write a message to student">
+              <td class="py-2 px-3 flex gap-2 items-center">
+                <button @click="sendFeedback(s)" class="px-2 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded flex items-center gap-1 transition-all hover:scale-105" title="Send Feedback">
                   <EnvelopeIcon class="w-4 h-4" />
                 </button>
-                <button @click="notifyFailing(s)" class="px-2 py-1 text-sm bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center gap-1" title="Send automated failing alert">
+                <InfoTooltip 
+                  content="Send constructive feedback to this student. A notification will appear in their notification bell and in the Feedback section of their Classroom tab."
+                  position="left"
+                  icon-class="text-blue-500"
+                />
+                <button @click="notifyFailing(s)" class="px-2 py-1 text-sm bg-yellow-600 hover:bg-yellow-700 text-white rounded flex items-center gap-1 transition-all hover:scale-105" title="Send Warning">
                   <ExclamationTriangleIcon class="w-4 h-4" />
                 </button>
+                <InfoTooltip 
+                  content="Send a warning alert to this student. A notification will appear in their notification bell and in the Warning section of their Classroom tab."
+                  position="left"
+                  icon-class="text-yellow-500"
+                />
               </td>
             </tr>
             <tr v-if="students.length === 0">
@@ -223,7 +251,15 @@ const exportReport = async (format) => {
       <!-- Remarks / Insights -->
       <div class="bg-white rounded-lg shadow p-6 border border-gray-100">
         <div class="flex items-center justify-between mb-3">
-          <h2 class="text-lg font-semibold flex items-center gap-2"><InboxIcon class="w-6 h-6 text-indigo-700" /> REMARKS & INSIGHTS</h2>
+          <h2 class="text-lg font-semibold flex items-center gap-2">
+            <InboxIcon class="w-6 h-6 text-indigo-700" /> 
+            REMARKS & INSIGHTS
+            <InfoTooltip 
+              title="Remarks & Insights"
+              content="AI-generated insights about class performance trends, common challenges, and areas where students need additional support. Use this information to adjust teaching strategies."
+              position="right"
+            />
+          </h2>
         </div>
         <ul class="list-disc pl-5 text-sm text-gray-700 space-y-1">
           <li><CheckCircleIcon class="inline w-4 h-4 text-emerald-600 mr-1" /> {{ overview?.passed?.percent || 0 }}% of students passed.</li>
@@ -233,21 +269,7 @@ const exportReport = async (format) => {
         </ul>
       </div>
 
-      <!-- Export Section -->
-      <div class="bg-white rounded-lg shadow p-6 flex items-center justify-between border border-gray-100">
-        <div>
-          <h2 class="text-lg font-semibold flex items-center gap-2"><DocumentArrowDownIcon class="w-6 h-6 text-gray-700" /> EXPORT REPORT</h2>
-          <p class="text-sm text-gray-500">Download this report for record-keeping</p>
-        </div>
-        <div class="flex items-center gap-2">
-          <button @click="exportReport('pdf')" class="flex items-center gap-1 px-3 py-2 bg-red-600 hover:bg-red-700 text-white rounded shadow-sm transition">
-            <DocumentArrowDownIcon class="w-5 h-5" /> PDF
-          </button>
-          <button @click="exportReport('csv')" class="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded shadow-sm transition">
-            <DocumentArrowDownIcon class="w-5 h-5" /> Excel
-          </button>
-        </div>
-      </div>
+      <!-- Export section removed as requested -->
     </div>
     </div>
   </TeacherLayout>

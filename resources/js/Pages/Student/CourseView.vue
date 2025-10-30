@@ -1,6 +1,7 @@
 <script setup>
 import { Head, useForm } from '@inertiajs/vue3';
 import StudentLayout from '@/Layouts/StudentLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 import { ref, computed } from 'vue';
 
 const props = defineProps({
@@ -10,6 +11,14 @@ const props = defineProps({
     pendingClassworks: Array,
     completedClassworks: Array,
     announcements: Array,
+    feedbacks: {
+        type: Array,
+        default: () => []
+    },
+    warnings: {
+        type: Array,
+        default: () => []
+    },
 });
 
 const activeTab = ref('classwork');
@@ -505,6 +514,92 @@ const unsubmitWork = () => {
                                         </svg>
                                         <p class="text-gray-500 text-sm">All caught up!</p>
                                         <p class="text-gray-400 text-xs mt-1">No pending tasks</p>
+                                    </div>
+                                </div>
+
+                                <!-- FEEDBACK SECTION -->
+                                <div class="bg-white rounded-lg shadow-md p-6">
+                                    <h2 class="flex items-center gap-2 text-xl font-bold text-gray-900 mb-4">
+                                        <span class="text-2xl">💬</span>
+                                        Feedback from Teachers
+                                        <InfoTooltip 
+                                            title="Feedback Section"
+                                            content="View constructive feedback and positive comments from your teachers. This helps you understand what you're doing well and where you can improve."
+                                            position="right"
+                                        />
+                                    </h2>
+                                    
+                                    <!-- Feedback Items -->
+                                    <div v-if="feedbacks && feedbacks.length > 0" class="space-y-3">
+                                        <div
+                                            v-for="feedback in feedbacks"
+                                            :key="feedback.id"
+                                            class="border-l-4 border-blue-500 pl-4 py-3 bg-blue-50 rounded-r-lg hover:bg-blue-100 transition"
+                                        >
+                                            <div class="flex items-start justify-between mb-2">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <span class="text-xs font-semibold text-blue-700 uppercase">{{ feedback.course_name }}</span>
+                                                        <span class="text-xs text-gray-500">•</span>
+                                                        <span class="text-xs text-gray-600">{{ feedback.created_at }}</span>
+                                                    </div>
+                                                    <p class="text-sm font-medium text-gray-700 mb-1">From: {{ feedback.teacher_name }}</p>
+                                                    <p class="text-sm text-gray-800">{{ feedback.message }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Empty State -->
+                                    <div v-else class="text-center py-8">
+                                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                        </svg>
+                                        <p class="text-gray-500 text-sm">No feedback yet</p>
+                                        <p class="text-gray-400 text-xs mt-1">Feedback from teachers will appear here</p>
+                                    </div>
+                                </div>
+
+                                <!-- WARNING SECTION -->
+                                <div class="bg-white rounded-lg shadow-md p-6">
+                                    <h2 class="flex items-center gap-2 text-xl font-bold text-gray-900 mb-4">
+                                        <span class="text-2xl">⚠️</span>
+                                        Warnings from Teachers
+                                        <InfoTooltip 
+                                            title="Warning Section"
+                                            content="Important warnings and concerns from your teachers that require your immediate attention. Please review and address these as soon as possible."
+                                            position="right"
+                                        />
+                                    </h2>
+                                    
+                                    <!-- Warning Items -->
+                                    <div v-if="warnings && warnings.length > 0" class="space-y-3">
+                                        <div
+                                            v-for="warning in warnings"
+                                            :key="warning.id"
+                                            class="border-l-4 border-red-500 pl-4 py-3 bg-red-50 rounded-r-lg hover:bg-red-100 transition"
+                                        >
+                                            <div class="flex items-start justify-between mb-2">
+                                                <div class="flex-1">
+                                                    <div class="flex items-center gap-2 mb-1">
+                                                        <span class="text-xs font-semibold text-red-700 uppercase">{{ warning.course_name }}</span>
+                                                        <span class="text-xs text-gray-500">•</span>
+                                                        <span class="text-xs text-gray-600">{{ warning.created_at }}</span>
+                                                    </div>
+                                                    <p class="text-sm font-medium text-gray-700 mb-1">From: {{ warning.teacher_name }}</p>
+                                                    <p class="text-sm text-gray-800 font-medium">{{ warning.message }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Empty State -->
+                                    <div v-else class="text-center py-8">
+                                        <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                        </svg>
+                                        <p class="text-gray-500 text-sm">No warnings</p>
+                                        <p class="text-gray-400 text-xs mt-1">Warnings from teachers will appear here</p>
                                     </div>
                                 </div>
 

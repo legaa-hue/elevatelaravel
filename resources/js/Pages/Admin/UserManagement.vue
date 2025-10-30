@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 
 const props = defineProps({
     users: Array,
@@ -217,22 +218,42 @@ const generatePassword = () => {
         <div class="space-y-6">
             <!-- Header -->
             <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                <div>
+                <div class="flex items-center gap-2">
                     <h1 class="text-2xl md:text-3xl font-bold text-gray-900">👥 User Management</h1>
-                    <p class="text-sm text-gray-600 mt-1">Manage all system users and their permissions</p>
+                    <InfoTooltip 
+                        title="User Management"
+                        content="Create, edit, and manage all system users including admins, teachers, and students. You can assign roles, manage permissions, and control user access to the system."
+                        position="right"
+                    />
+                    <p class="text-sm text-gray-600 mt-1 ml-2">Manage all system users and their permissions</p>
                 </div>
-                <button
-                    @click="openCreateModal"
-                    class="flex items-center justify-center space-x-2 px-6 py-3 bg-red-900 text-white rounded-lg hover:bg-red-800 transition-colors shadow-md"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                    </svg>
-                    <span class="font-medium">Add User</span>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        @click="openCreateModal"
+                        class="flex items-center justify-center space-x-2 px-6 py-3 bg-red-900 text-white rounded-lg hover:bg-red-800 hover:scale-105 transition-all shadow-md"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                        </svg>
+                        <span class="font-medium">Add User</span>
+                    </button>
+                    <InfoTooltip 
+                        title="Add New User"
+                        content="Click to create a new user account. You'll need to provide basic information like name, email, role (admin/teacher/student), and set a password."
+                        position="left"
+                    />
+                </div>
             </div>
 
             <!-- Stats Cards -->
+            <div class="flex items-center gap-2 mb-2">
+                <h2 class="text-lg font-semibold text-gray-900">User Statistics</h2>
+                <InfoTooltip 
+                    title="User Statistics"
+                    content="Real-time statistics showing the total count of users by role and status. This helps you monitor user distribution across the system."
+                    position="right"
+                />
+            </div>
             <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
                 <div class="bg-white rounded-lg shadow-md border border-gray-200 p-4">
                     <div class="flex items-center space-x-3">
@@ -321,10 +342,25 @@ const generatePassword = () => {
 
             <!-- Filters Section -->
             <div class="bg-white rounded-lg shadow-md border border-gray-200 p-4">
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Filters</h2>
+                    <InfoTooltip 
+                        title="Filter Options"
+                        content="Use these filters to quickly find specific users by searching names/emails, filtering by role, or filtering by account status."
+                        position="right"
+                    />
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <!-- Search -->
                     <div class="md:col-span-1">
-                        <label class="block text-sm font-semibold text-gray-900 mb-2">Search</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-semibold text-gray-900">Search</label>
+                            <InfoTooltip 
+                                title="Search Users"
+                                content="Type any name, email, or username to instantly filter the user list. Search is case-insensitive."
+                                position="top"
+                            />
+                        </div>
                         <input
                             v-model="searchQuery"
                             @input="applyFilters"
@@ -336,7 +372,14 @@ const generatePassword = () => {
 
                     <!-- Role Filter -->
                     <div>
-                        <label class="block text-sm font-semibold text-gray-900 mb-2">Filter by Role</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-semibold text-gray-900">Filter by Role</label>
+                            <InfoTooltip 
+                                title="Role Filter"
+                                content="Filter users by their role: Admin (full system access), Teacher (course management), or Student (course participation)."
+                                position="top"
+                            />
+                        </div>
                         <select
                             v-model="roleFilter"
                             @change="applyFilters"
@@ -351,7 +394,14 @@ const generatePassword = () => {
 
                     <!-- Status Filter -->
                     <div>
-                        <label class="block text-sm font-semibold text-gray-900 mb-2">Filter by Status</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-semibold text-gray-900">Filter by Status</label>
+                            <InfoTooltip 
+                                title="Status Filter"
+                                content="Filter users by account status: Active (can log in), Inactive (disabled), or Pending (awaiting approval)."
+                                position="top"
+                            />
+                        </div>
                         <select
                             v-model="statusFilter"
                             @change="applyFilters"
@@ -424,18 +474,32 @@ const generatePassword = () => {
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                     <div class="flex items-center justify-end space-x-2">
-                                        <button
-                                            @click="editUser(user)"
-                                            class="text-blue-600 hover:text-blue-900 font-medium"
-                                        >
-                                            Edit
-                                        </button>
-                                        <button
-                                            @click="deleteUser(user.id, user.name)"
-                                            class="text-red-600 hover:text-red-900 font-medium"
-                                        >
-                                            Delete
-                                        </button>
+                                        <div class="flex items-center gap-1">
+                                            <button
+                                                @click="editUser(user)"
+                                                class="text-blue-600 hover:text-blue-900 hover:scale-105 transition-all font-medium"
+                                            >
+                                                Edit
+                                            </button>
+                                            <InfoTooltip 
+                                                title="Edit User"
+                                                content="Click to modify this user's information including name, email, role, and password."
+                                                position="left"
+                                            />
+                                        </div>
+                                        <div class="flex items-center gap-1">
+                                            <button
+                                                @click="deleteUser(user.id, user.name)"
+                                                class="text-red-600 hover:text-red-900 hover:scale-105 transition-all font-medium"
+                                            >
+                                                Delete
+                                            </button>
+                                            <InfoTooltip 
+                                                title="⚠️ Delete User"
+                                                content="CAUTION: This will permanently remove this user and all their associated data from the system. This action cannot be undone!"
+                                                position="left"
+                                            />
+                                        </div>
                                     </div>
                                 </td>
                             </tr>

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, router, useForm } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 import axios from 'axios';
 
 const props = defineProps({
@@ -364,78 +365,124 @@ const cancelDeleteTemplate = () => {
         <div class="p-4 md:p-6 space-y-6">
             <!-- Header -->
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div>
+                <div class="flex items-center gap-2">
                     <h1 class="text-2xl md:text-3xl font-bold text-gray-900">Academic Year Management</h1>
-                    <p class="mt-1 md:mt-2 text-sm md:text-base text-gray-600">Manage academic years, programs, and course templates</p>
+                    <InfoTooltip 
+                        title="Academic Year Management"
+                        content="Manage academic years, programs, and course templates. Control which academic year is active, add/edit programs, and create course templates that can be used when setting up courses."
+                        position="right"
+                    />
+                    <p class="mt-1 md:mt-2 text-sm md:text-base text-gray-600 ml-2">Manage academic years, programs, and course templates</p>
                 </div>
-                <button
-                    v-if="activeTab === 'academic-years'"
-                    @click="showCreateModal = true"
-                    class="w-full sm:w-auto bg-red-900 hover:bg-red-800 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition flex items-center justify-center gap-2"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    <span class="text-sm md:text-base">Create Academic Year</span>
-                </button>
-                <button
-                    v-if="activeTab === 'programs'"
-                    @click="openCreateProgramModal"
-                    class="w-full sm:w-auto bg-red-900 hover:bg-red-800 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition flex items-center justify-center gap-2"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    <span class="text-sm md:text-base">Add Program</span>
-                </button>
-                <button
-                    v-if="activeTab === 'course-templates'"
-                    @click="openCreateTemplateModal"
-                    class="w-full sm:w-auto bg-red-900 hover:bg-red-800 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition flex items-center justify-center gap-2"
-                >
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-                    </svg>
-                    <span class="text-sm md:text-base">Add Course Template</span>
-                </button>
+                <div class="flex items-center gap-2">
+                    <button
+                        v-if="activeTab === 'academic-years'"
+                        @click="showCreateModal = true"
+                        class="w-full sm:w-auto bg-red-900 hover:bg-red-800 hover:scale-105 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        <span class="text-sm md:text-base">Create Academic Year</span>
+                    </button>
+                    <InfoTooltip 
+                        v-if="activeTab === 'academic-years'"
+                        title="Create Academic Year"
+                        content="Add a new academic year to the system. You can specify the year name (e.g., 2024-2025) and upload configuration files if needed."
+                        position="left"
+                    />
+                    <button
+                        v-if="activeTab === 'programs'"
+                        @click="openCreateProgramModal"
+                        class="w-full sm:w-auto bg-red-900 hover:bg-red-800 hover:scale-105 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        <span class="text-sm md:text-base">Add Program</span>
+                    </button>
+                    <InfoTooltip 
+                        v-if="activeTab === 'programs'"
+                        title="Add Program"
+                        content="Create a new academic program (e.g., BS Computer Science, BS Information Technology). Programs group related courses together."
+                        position="left"
+                    />
+                    <button
+                        v-if="activeTab === 'course-templates'"
+                        @click="openCreateTemplateModal"
+                        class="w-full sm:w-auto bg-red-900 hover:bg-red-800 hover:scale-105 text-white px-4 md:px-6 py-2 md:py-3 rounded-lg font-medium transition-all flex items-center justify-center gap-2"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+                        </svg>
+                        <span class="text-sm md:text-base">Add Course Template</span>
+                    </button>
+                    <InfoTooltip 
+                        v-if="activeTab === 'course-templates'"
+                        title="Add Course Template"
+                        content="Create a reusable course template with code, name, type, and units. Templates make it easier to create new course sections."
+                        position="left"
+                    />
+                </div>
             </div>
 
             <!-- Tabs -->
             <div class="border-b border-gray-200">
                 <nav class="-mb-px flex space-x-8" aria-label="Tabs">
-                    <button
-                        @click="activeTab = 'academic-years'"
-                        :class="[
-                            activeTab === 'academic-years'
-                                ? 'border-red-900 text-red-900'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
-                        ]"
-                    >
-                        Academic Years
-                    </button>
-                    <button
-                        @click="activeTab = 'programs'"
-                        :class="[
-                            activeTab === 'programs'
-                                ? 'border-red-900 text-red-900'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
-                        ]"
-                    >
-                        Programs
-                    </button>
-                    <button
-                        @click="activeTab = 'course-templates'"
-                        :class="[
-                            activeTab === 'course-templates'
-                                ? 'border-red-900 text-red-900'
-                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
-                            'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
-                        ]"
-                    >
-                        Course Templates
-                    </button>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="activeTab = 'academic-years'"
+                            :class="[
+                                activeTab === 'academic-years'
+                                    ? 'border-red-900 text-red-900'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
+                            ]"
+                        >
+                            Academic Years
+                        </button>
+                        <InfoTooltip 
+                            title="Academic Years Tab"
+                            content="View and manage all academic years. Set which year is currently active and control year transitions."
+                            position="top"
+                        />
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="activeTab = 'programs'"
+                            :class="[
+                                activeTab === 'programs'
+                                    ? 'border-red-900 text-red-900'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
+                            ]"
+                        >
+                            Programs
+                        </button>
+                        <InfoTooltip 
+                            title="Programs Tab"
+                            content="Manage academic programs (e.g., BS Computer Science, BS IT). Add, edit, or deactivate programs."
+                            position="top"
+                        />
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button
+                            @click="activeTab = 'course-templates'"
+                            :class="[
+                                activeTab === 'course-templates'
+                                    ? 'border-red-900 text-red-900'
+                                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300',
+                                'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm'
+                            ]"
+                        >
+                            Course Templates
+                        </button>
+                        <InfoTooltip 
+                            title="Course Templates Tab"
+                            content="Manage reusable course templates with predefined course codes, names, types, and units for easier course creation."
+                            position="top"
+                        />
+                    </div>
                 </nav>
             </div>
 
@@ -517,18 +564,32 @@ const cancelDeleteTemplate = () => {
                             Download File
                         </button>
                         <div class="flex gap-2">
-                            <button
-                                @click="openEditModal(year)"
-                                class="flex-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1"
-                            >
-                                ✏️ Edit Notes
-                            </button>
-                            <button
-                                @click="deleteYear(year)"
-                                class="flex-1 px-4 py-2 bg-red-100 hover:bg-red-200 text-red-800 rounded-lg text-sm font-medium transition flex items-center justify-center gap-1"
-                            >
-                                🗑️ Delete
-                            </button>
+                            <div class="flex-1 flex items-center gap-1">
+                                <button
+                                    @click="openEditModal(year)"
+                                    class="flex-1 px-4 py-2 bg-yellow-100 hover:bg-yellow-200 hover:scale-105 text-yellow-800 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1"
+                                >
+                                    ✏️ Edit Notes
+                                </button>
+                                <InfoTooltip 
+                                    title="Edit Notes"
+                                    content="Add or modify notes for this academic year to keep track of important information or changes."
+                                    position="left"
+                                />
+                            </div>
+                            <div class="flex-1 flex items-center gap-1">
+                                <button
+                                    @click="deleteYear(year)"
+                                    class="flex-1 px-4 py-2 bg-red-100 hover:bg-red-200 hover:scale-105 text-red-800 rounded-lg text-sm font-medium transition-all flex items-center justify-center gap-1"
+                                >
+                                    🗑️ Delete
+                                </button>
+                                <InfoTooltip 
+                                    title="⚠️ Delete Academic Year"
+                                    content="CAUTION: This will permanently remove this academic year and ALL associated data including courses, grades, and submissions. This action cannot be undone!"
+                                    position="left"
+                                />
+                            </div>
                         </div>
                     </div>
                 </div>

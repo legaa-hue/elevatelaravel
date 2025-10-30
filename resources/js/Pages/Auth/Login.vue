@@ -5,13 +5,17 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import { ref, onMounted } from 'vue';
 
-defineProps({
+const props = defineProps({
     canResetPassword: {
         type: Boolean,
     },
     status: {
+        type: String,
+    },
+    error: {
         type: String,
     },
 });
@@ -20,18 +24,64 @@ const form = useForm({
     email: '',
     password: '',
     remember: false,
+    recaptcha_token: '',
 });
 
-const submit = () => {
-    form.post(route('login'), {
-        onFinish: () => form.reset('password'),
-    });
+const recaptchaLoaded = ref(false);
+const recaptchaSiteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY || 'your-recaptcha-site-key';
+
+onMounted(() => {
+    // Load reCAPTCHA v3 script (invisible)
+    if (window.grecaptcha) {
+        recaptchaLoaded.value = true;
+    } else {
+        const script = document.createElement('script');
+        script.src = `https://www.google.com/recaptcha/api.js?render=${recaptchaSiteKey}`;
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+            recaptchaLoaded.value = true;
+        };
+        document.head.appendChild(script);
+    }
+});
+
+const submit = async () => {
+    // Get reCAPTCHA token in background (v3 style)
+    if (window.grecaptcha && recaptchaLoaded.value) {
+        try {
+            await window.grecaptcha.ready(async () => {
+                const token = await window.grecaptcha.execute(recaptchaSiteKey, { action: 'login' });
+                form.recaptcha_token = token;
+                
+                // Submit form after getting token
+                form.post(route('login'), {
+                    onFinish: () => {
+                        form.reset('password');
+                    },
+                });
+            });
+        } catch (e) {
+            console.error('reCAPTCHA error:', e);
+            // Submit anyway in case of reCAPTCHA error
+            form.post(route('login'), {
+                onFinish: () => {
+                    form.reset('password');
+                },
+            });
+        }
+    } else {
+        // No reCAPTCHA loaded, submit anyway
+        form.post(route('login'), {
+            onFinish: () => {
+                form.reset('password');
+            },
+        });
+    }
 };
 
 const handleGoogleSignIn = () => {
-    // TODO: Implement Google Sign-In
-    console.log('Google Sign-In clicked');
-    // window.location.href = route('auth.google');
+    window.location.href = route('auth.google');
 };
 </script>
 
@@ -46,6 +96,10 @@ const handleGoogleSignIn = () => {
 
         <div v-if="status" class="mb-4 rounded-md bg-green-50 p-3 text-sm font-medium text-green-800 border border-green-200">
             {{ status }}
+        </div>
+
+        <div v-if="error" class="mb-4 rounded-md bg-red-50 p-3 text-sm font-medium text-red-800 border border-red-200">
+            {{ error }}
         </div>
 
         <!-- Google Sign-In Button -->
@@ -108,6 +162,8 @@ const handleGoogleSignIn = () => {
                 </label>
             </div>
 
+            <!-- reCAPTCHA v3 runs in background - no visible widget needed -->
+
             <div class="mt-6">
                 <PrimaryButton
                     class="w-full justify-center"
@@ -116,6 +172,10 @@ const handleGoogleSignIn = () => {
                 >
                     Sign In
                 </PrimaryButton>
+            </div>
+
+            <div class="mt-2 text-xs text-center text-gray-500">
+                Protected by reCAPTCHA
             </div>
 
             <div class="mt-4 flex items-center justify-between text-sm">

@@ -152,36 +152,64 @@ class GradeSheetController extends Controller
         $grades = $periodData['grades'][$studentId];
         $tables = $periodData['tables'];
         $total = 0;
-        $weightSum = 0;
+        
         foreach ($tables as $table) {
-            // Use 'percentage' and 'id' for teacher gradebook structure
-            $tableWeight = $table['percentage'] ?? 0;
+            // Skip summary tables
+            if (!empty($table['isSummary'])) {
+                continue;
+            }
+            
+            $tableWeight = floatval($table['percentage'] ?? 0);
+            if ($tableWeight == 0) {
+                continue;
+            }
+            
             $tableTotal = 0;
             $columnWeightSum = 0;
-            foreach ($table['columns'] as $col) {
-                $colWeight = $col['percentage'] ?? 0;
-                $columnWeightSum += $colWeight;
-            }
-            if ($columnWeightSum > 0) {
-                foreach ($table['columns'] as $col) {
-                    $colId = $col['id'];
-                    $colWeight = $col['percentage'] ?? 0;
-                    // Find all subcolumns and sum their scores
-                    $colScore = 0;
-                    if (!empty($col['subcolumns'])) {
-                        foreach ($col['subcolumns'] as $subcol) {
-                            $subcolId = $subcol['id'];
-                            $gradeKey = $table['id'] . '-' . $colId . '-' . $subcolId;
-                            $colScore += isset($grades[$gradeKey]) ? floatval($grades[$gradeKey]) : 0;
-                        }
-                    }
-                    $tableTotal += ($colScore * ($colWeight / $columnWeightSum));
+            
+            // Calculate total column percentage
+            foreach (($table['columns'] ?? []) as $col) {
+                if (!empty($col['subcolumns'])) {
+                    $columnWeightSum += floatval($col['percentage'] ?? 0);
                 }
             }
-            $total += $tableTotal * ($tableWeight / 100);
-            $weightSum += $tableWeight;
+            
+            if ($columnWeightSum > 0) {
+                foreach (($table['columns'] ?? []) as $col) {
+                    if (empty($col['subcolumns'])) {
+                        continue;
+                    }
+                    
+                    $colId = $col['id'];
+                    $colWeight = floatval($col['percentage'] ?? 0);
+                    $colScore = 0;
+                    $colMax = 0;
+                    
+                    // Calculate column score and max points
+                    foreach ($col['subcolumns'] as $subcol) {
+                        $subcolId = $subcol['id'];
+                        $gradeKey = $table['id'] . '-' . $colId . '-' . $subcolId;
+                        $maxPoints = floatval($subcol['maxPoints'] ?? 100);
+                        
+                        $colScore += isset($grades[$gradeKey]) ? floatval($grades[$gradeKey]) : 0;
+                        $colMax += $maxPoints;
+                    }
+                    
+                    // Calculate percentage score for this column
+                    if ($colMax > 0) {
+                        $colPercentScore = $colScore / $colMax;
+                        // Normalized column weight
+                        $colNormalizedWeight = $colWeight / $columnWeightSum;
+                        $tableTotal += $colPercentScore * $colNormalizedWeight;
+                    }
+                }
+            }
+            
+            // Apply table weight
+            $total += $tableTotal * ($tableWeight / 100) * 100;
         }
-        return $weightSum > 0 ? ($total / ($weightSum / 100)) : 0;
+        
+        return round($total, 2);
     }
 
     private function getLetterGrade($finalGrade)

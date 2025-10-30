@@ -293,5 +293,197 @@ class CourseViewController extends Controller
             'submissions' => $submissions
         ]);
     }
+
+    /**
+     * Export Final Grades as PDF
+     */
+    public function exportFinalGrades(Course $course)
+    {
+        $user = Auth::user();
+        $isOwner = $course->teacher_id === $user->id;
+        $isJoined = $course->joinedCourses()->where('user_id', $user->id)->where('role', 'Teacher')->exists();
+        
+        if (!$isOwner && !$isJoined) {
+            abort(403, 'Unauthorized');
+        }
+
+        $course->load(['students', 'teacher', 'academicYear']);
+        
+        // Prepare students data with grades
+        $studentsData = $course->students->map(function ($student) use ($course) {
+            $gradebook = $course->gradebook ?? [];
+            
+            // Get midterm grade
+            $midtermGrade = 0;
+            if (isset($gradebook['midterm']['summary'][$student->id])) {
+                $midtermGrade = $gradebook['midterm']['summary'][$student->id];
+            } elseif (isset($gradebook['midterm']['periodGrades'][$student->id])) {
+                $midtermGrade = $gradebook['midterm']['periodGrades'][$student->id];
+            }
+            
+            // Get finals grade
+            $finalsGrade = 0;
+            if (isset($gradebook['finals']['summary'][$student->id])) {
+                $finalsGrade = $gradebook['finals']['summary'][$student->id];
+            } elseif (isset($gradebook['finals']['periodGrades'][$student->id])) {
+                $finalsGrade = $gradebook['finals']['periodGrades'][$student->id];
+            }
+            
+            // Calculate final grade (50% midterm + 50% finals by default)
+            $midtermPercentage = $gradebook['midtermPercentage'] ?? 50;
+            $finalsPercentage = $gradebook['finalsPercentage'] ?? 50;
+            $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) + ($finalsGrade * ($finalsPercentage / 100));
+            
+            // Determine passing status (using Masteral: 1.75, Doctorate: 1.45)
+            $passingGrade = 1.75; // Default to Masteral
+            $remarks = $finalGrade > 0 && $finalGrade <= $passingGrade ? 'PASSED' : 'FAILED/RETAKE';
+            
+            return [
+                'name' => $student->first_name . ' ' . $student->last_name,
+                'student_id' => $student->student_id ?? 'N/A',
+                'program' => $student->program ?? 'N/A',
+                'midterm_grade' => number_format($midtermGrade, 2),
+                'finals_grade' => number_format($finalsGrade, 2),
+                'final_grade' => number_format($finalGrade, 2),
+                'remarks' => $remarks,
+            ];
+        })->sortBy('name')->values();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.final-grades', [
+            'course' => $course,
+            'students' => $studentsData,
+            'generated_by' => $user->first_name . ' ' . $user->last_name,
+            'generated_at' => now()->format('F d, Y h:i A'),
+        ]);
+
+        $pdf->setPaper('a4', 'portrait');
+        $filename = 'Final_Grades_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Export Course Performance as PDF
+     */
+    public function exportCoursePerformance(Course $course)
+    {
+        $user = Auth::user();
+        $isOwner = $course->teacher_id === $user->id;
+        $isJoined = $course->joinedCourses()->where('user_id', $user->id)->where('role', 'Teacher')->exists();
+        
+        if (!$isOwner && !$isJoined) {
+            abort(403, 'Unauthorized');
+        }
+
+        $course->load(['students', 'teacher', 'academicYear']);
+        
+        // Get all classwork
+        $classwork = Classwork::where('course_id', $course->id)
+            ->where('status', 'active')
+            ->orderBy('created_at')
+            ->get();
+
+        // Prepare performance data
+        $studentsData = $course->students->map(function ($student) use ($course, $classwork) {
+            $submissions = ClassworkSubmission::whereIn('classwork_id', $classwork->pluck('id'))
+                ->where('student_id', $student->id)
+                ->whereIn('status', ['graded', 'returned'])
+                ->whereNotNull('grade')
+                ->get();
+
+            $totalSubmissions = $submissions->count();
+            $averageGrade = $totalSubmissions > 0 ? $submissions->avg('grade') : 0;
+            $totalPossible = $submissions->sum(function ($sub) {
+                return $sub->classwork->points ?? 0;
+            });
+            $totalEarned = $submissions->sum('grade');
+            $percentage = $totalPossible > 0 ? ($totalEarned / $totalPossible) * 100 : 0;
+
+            return [
+                'name' => $student->first_name . ' ' . $student->last_name,
+                'total_submissions' => $totalSubmissions,
+                'total_classwork' => $classwork->where('has_submission', true)->count(),
+                'average_grade' => number_format($averageGrade, 2),
+                'percentage' => number_format($percentage, 2),
+            ];
+        })->sortByDesc('percentage')->values();
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.course-performance', [
+            'course' => $course,
+            'students' => $studentsData,
+            'generated_by' => $user->first_name . ' ' . $user->last_name,
+            'generated_at' => now()->format('F d, Y h:i A'),
+        ]);
+
+        $pdf->setPaper('a4', 'landscape');
+        $filename = 'Course_Performance_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
+        return $pdf->download($filename);
+    }
+
+    /**
+     * Export Class Standings as PDF
+     */
+    public function exportClassStandings(Course $course)
+    {
+        $user = Auth::user();
+        $isOwner = $course->teacher_id === $user->id;
+        $isJoined = $course->joinedCourses()->where('user_id', $user->id)->where('role', 'Teacher')->exists();
+        
+        if (!$isOwner && !$isJoined) {
+            abort(403, 'Unauthorized');
+        }
+
+        $course->load(['students', 'teacher', 'academicYear']);
+        
+        // Prepare students data with final grades for ranking
+        $studentsData = $course->students->map(function ($student) use ($course) {
+            $gradebook = $course->gradebook ?? [];
+            
+            // Get midterm grade
+            $midtermGrade = 0;
+            if (isset($gradebook['midterm']['summary'][$student->id])) {
+                $midtermGrade = $gradebook['midterm']['summary'][$student->id];
+            } elseif (isset($gradebook['midterm']['periodGrades'][$student->id])) {
+                $midtermGrade = $gradebook['midterm']['periodGrades'][$student->id];
+            }
+            
+            // Get finals grade
+            $finalsGrade = 0;
+            if (isset($gradebook['finals']['summary'][$student->id])) {
+                $finalsGrade = $gradebook['finals']['summary'][$student->id];
+            } elseif (isset($gradebook['finals']['periodGrades'][$student->id])) {
+                $finalsGrade = $gradebook['finals']['periodGrades'][$student->id];
+            }
+            
+            // Calculate final grade
+            $midtermPercentage = $gradebook['midtermPercentage'] ?? 50;
+            $finalsPercentage = $gradebook['finalsPercentage'] ?? 50;
+            $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) + ($finalsGrade * ($finalsPercentage / 100));
+            
+            return [
+                'name' => $student->first_name . ' ' . $student->last_name,
+                'student_id' => $student->student_id ?? 'N/A',
+                'program' => $student->program ?? 'N/A',
+                'final_grade' => $finalGrade,
+                'final_grade_formatted' => number_format($finalGrade, 2),
+            ];
+        })->sortBy('final_grade')->values(); // Lower grades are better (1.0 is highest)
+
+        // Add rank
+        $studentsData = $studentsData->map(function ($student, $index) {
+            $student['rank'] = $index + 1;
+            return $student;
+        });
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.class-standings', [
+            'course' => $course,
+            'students' => $studentsData,
+            'generated_by' => $user->first_name . ' ' . $user->last_name,
+            'generated_at' => now()->format('F d, Y h:i A'),
+        ]);
+
+        $pdf->setPaper('a4', 'portrait');
+        $filename = 'Class_Standings_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
+        return $pdf->download($filename);
+    }
 }
 

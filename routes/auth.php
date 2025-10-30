@@ -4,6 +4,8 @@ use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
 use App\Http\Controllers\Auth\EmailVerificationPromptController;
+use App\Http\Controllers\Auth\GoogleAuthController;
+use App\Http\Controllers\Auth\ManualEmailVerificationController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
@@ -33,6 +35,24 @@ Route::middleware('guest')->group(function () {
 
     Route::post('reset-password', [NewPasswordController::class, 'store'])
         ->name('password.store');
+
+    // Google OAuth
+    Route::get('auth/google', [GoogleAuthController::class, 'redirect'])
+        ->name('auth.google');
+    
+    Route::get('auth/google/{role?}', [GoogleAuthController::class, 'redirect'])
+        ->name('auth.google.with-role')
+        ->where('role', 'teacher|student');
+
+    Route::get('auth/google/callback', [GoogleAuthController::class, 'callback'])
+        ->name('auth.google.callback');
+
+    Route::post('auth/google/complete', [GoogleAuthController::class, 'completeRegistration'])
+        ->name('auth.google.complete');
+
+    // Manual Email Verification
+    Route::post('email/send-verification', [ManualEmailVerificationController::class, 'send'])
+        ->name('email.send-verification');
 });
 
 Route::middleware('auth')->group(function () {

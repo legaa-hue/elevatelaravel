@@ -104,6 +104,10 @@ const downloadPdf = () => {
                 <span class="px-2 py-1 text-xs rounded bg-gray-100 text-gray-700">{{ course.status }}</span>
               </div>
             </div>
+            <div class="flex items-center gap-2 mt-2">
+              <span class="font-semibold text-xs text-gray-500">Midterm Grade:</span>
+              <span class="text-xs text-gray-900">{{ course.midterm_grade !== null ? course.midterm_grade : 'N/A' }}</span>
+            </div>
             <div class="mt-4 pt-4 border-t border-gray-200 flex items-center justify-between text-sm">
               <span class="text-gray-600">Open Class Record</span>
               <svg class="w-5 h-5 text-red-600 group-hover:translate-x-1 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">

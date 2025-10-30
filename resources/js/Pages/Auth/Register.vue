@@ -4,7 +4,14 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+
+import { ref, computed } from 'vue';
+import { router } from '@inertiajs/vue3';
+
+// Get flash messages
+const page = usePage();
+const errorMessage = computed(() => page.props.error);
 
 const form = useForm({
     first_name: '',
@@ -15,6 +22,37 @@ const form = useForm({
     role: '',
 });
 
+const showVerifyButton = ref(false);
+
+const checkEmailVerification = () => {
+    if (form.email && form.email.length > 0) {
+        showVerifyButton.value = true;
+    } else {
+        showVerifyButton.value = false;
+    }
+};
+
+const sendVerificationEmail = () => {
+    if (!form.email) {
+        alert('Please enter your email address first.');
+        return;
+    }
+
+    router.post(route('email.send-verification'), { email: form.email }, {
+        preserveScroll: true,
+        onSuccess: () => {
+            alert('Verification email sent! Please check your inbox.');
+        },
+        onError: (errors) => {
+            if (errors.email) {
+                alert(errors.email);
+            } else {
+                alert('Failed to send verification email. Please try again.');
+            }
+        },
+    });
+};
+
 const submit = () => {
     form.post(route('register'), {
         onFinish: () => form.reset('password', 'password_confirmation'),
@@ -22,9 +60,14 @@ const submit = () => {
 };
 
 const handleGoogleSignUp = () => {
-    // TODO: Implement Google Sign-Up
-    console.log('Google Sign-Up clicked');
-    // window.location.href = route('auth.google.register');
+    // Check if role is selected before proceeding
+    if (!form.role) {
+        alert('Please select your role (Teacher or Student) before signing in with Google.');
+        return;
+    }
+    
+    // Redirect to Google OAuth with role parameter
+    window.location.href = route('auth.google', { role: form.role });
 };
 </script>
 
@@ -35,6 +78,16 @@ const handleGoogleSignUp = () => {
         <div class="mb-6 text-center">
             <h2 class="text-2xl font-medium text-gray-900">Create Your Account</h2>
             <p class="mt-2 text-sm text-gray-600">Join ElevateGS to start learning</p>
+        </div>
+
+        <!-- Error Message -->
+        <div v-if="errorMessage" class="mb-4 rounded-lg bg-red-50 p-4 text-sm text-red-800 border border-red-200">
+            <div class="flex items-center">
+                <svg class="h-5 w-5 mr-2 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+                </svg>
+                <span>{{ errorMessage }}</span>
+            </div>
         </div>
 
         <!-- Google Sign-Up Button -->
@@ -143,15 +196,32 @@ const handleGoogleSignUp = () => {
 
             <div class="mt-4">
                 <InputLabel for="email" value="Email" />
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
+                <div class="flex gap-2">
+                    <TextInput
+                        id="email"
+                        type="email"
+                        class="mt-1 block w-full"
+                        v-model="form.email"
+                        @input="checkEmailVerification"
+                        required
+                        autocomplete="username"
+                    />
+                    <button
+                        v-if="showVerifyButton"
+                        type="button"
+                        @click="sendVerificationEmail"
+                        class="mt-1 px-4 py-2 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-yellow-500 whitespace-nowrap transition-colors"
+                        title="Send verification email"
+                    >
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+                        </svg>
+                    </button>
+                </div>
                 <InputError class="mt-2" :message="form.errors.email" />
+                <p v-if="showVerifyButton" class="mt-1 text-xs text-gray-500">
+                    Click the envelope icon to verify your email address
+                </p>
             </div>
 
             <div class="mt-4">

@@ -1,4 +1,4 @@
-<script setup>
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    <script setup>
 import { ref, computed, watch } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
@@ -770,39 +770,32 @@ const isDoctorate = computed({
 // Class Record Grade Calculation Functions
 // Use the computed period grade from the gradebook summary (Midterm Period Grades)
 const getMidtermGrade = (studentId) => {
+    // Always use the same value as shown in the Gradebook tab: gradebook.midterm.summary[studentId] if available, else 0
     const gradebook = props.course.gradebook;
     if (!gradebook || !gradebook.midterm) return 0;
-    // If periodGrades summary exists, use it
-    if (gradebook.midterm.periodGrades && gradebook.midterm.periodGrades[studentId] !== undefined) {
-        return gradebook.midterm.periodGrades[studentId];
+    // Use summary table value if available (Gradebook tab uses this)
+    if (gradebook.midterm.summary && gradebook.midterm.summary[studentId] !== undefined && gradebook.midterm.summary[studentId] !== null) {
+        return parseFloat(gradebook.midterm.summary[studentId]);
     }
-    // Fallback: try to use the summary table total if available
-    if (gradebook.midterm.summary && gradebook.midterm.summary[studentId] !== undefined) {
-        return gradebook.midterm.summary[studentId];
+    // Fallback: use periodGrades if available
+    if (gradebook.midterm.periodGrades && gradebook.midterm.periodGrades[studentId] !== undefined && gradebook.midterm.periodGrades[studentId] !== null) {
+        return parseFloat(gradebook.midterm.periodGrades[studentId]);
     }
-    // Otherwise, fallback to 0
     return 0;
 };
 
 const getFinalsGrade = (studentId) => {
+    // Always use the same value as shown in the Gradebook tab: gradebook.finals.summary[studentId] if available, else 0
     const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.finals || !gradebook.finals.grades) return 0;
-    
-    const studentGrades = gradebook.finals.grades[studentId];
-    if (!studentGrades) return 0;
-    
-    // Calculate from all finals grades
-    let totalScore = 0;
-    let count = 0;
-    
-    Object.values(studentGrades).forEach(grade => {
-        if (grade && !isNaN(parseFloat(grade))) {
-            totalScore += parseFloat(grade);
-            count++;
-        }
-    });
-    
-    return count > 0 ? totalScore / count : 0;
+    if (!gradebook || !gradebook.finals) return 0;
+    if (gradebook.finals.summary && gradebook.finals.summary[studentId] !== undefined && gradebook.finals.summary[studentId] !== null) {
+        return parseFloat(gradebook.finals.summary[studentId]);
+    }
+    // Fallback: use periodGrades if available
+    if (gradebook.finals.periodGrades && gradebook.finals.periodGrades[studentId] !== undefined && gradebook.finals.periodGrades[studentId] !== null) {
+        return parseFloat(gradebook.finals.periodGrades[studentId]);
+    }
+    return 0;
 };
 
 const getFinalGrade = (studentId) => {
@@ -831,6 +824,19 @@ const getClassRecordRemarkClass = (finalGrade) => {
 
 const printClassRecord = () => {
     window.print();
+};
+
+// Export Functions for Class Record
+const exportFinalGrades = () => {
+    window.open(route('teacher.courses.export-final-grades', props.course.id), '_blank');
+};
+
+const exportCoursePerformance = () => {
+    window.open(route('teacher.courses.export-course-performance', props.course.id), '_blank');
+};
+
+const exportClassStandings = () => {
+    window.open(route('teacher.courses.export-class-standings', props.course.id), '_blank');
 };
 </script>
 
@@ -1352,6 +1358,50 @@ const printClassRecord = () => {
                                         </tr>
                                     </tbody>
                                 </table>
+                            </div>
+                        </div>
+
+                        <!-- Export Options -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                                <div>
+                                    <h3 class="font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                                        </svg>
+                                        Export Class Record
+                                    </h3>
+                                    <p class="text-sm text-gray-600">Download reports in PDF format</p>
+                                </div>
+                                <div class="flex flex-wrap gap-3">
+                                    <button
+                                        @click="exportFinalGrades"
+                                        class="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-sm transition font-medium"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                        </svg>
+                                        Final Grades PDF
+                                    </button>
+                                    <button
+                                        @click="exportCoursePerformance"
+                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition font-medium"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                        </svg>
+                                        Course Performance PDF
+                                    </button>
+                                    <button
+                                        @click="exportClassStandings"
+                                        class="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm transition font-medium"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                                        </svg>
+                                        Class Standings PDF
+                                    </button>
+                                </div>
                             </div>
                         </div>
 

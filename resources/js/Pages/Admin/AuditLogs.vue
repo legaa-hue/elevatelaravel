@@ -5,11 +5,26 @@
         <div class="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
             <!-- Header -->
             <div class="mb-8">
-                <h1 class="text-3xl font-bold text-gray-900">Audit Logs</h1>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-3xl font-bold text-gray-900">Audit Logs</h1>
+                    <InfoTooltip 
+                        title="Audit Logs"
+                        content="Complete audit trail of all system activities including user actions, logins, data modifications, and deletions. Use this to monitor security and track changes."
+                        position="right"
+                    />
+                </div>
                 <p class="mt-2 text-sm text-gray-600">Track and monitor all system activities</p>
             </div>
 
             <!-- Summary Cards -->
+            <div class="flex items-center gap-2 mb-4">
+                <h2 class="text-lg font-semibold text-gray-900">Activity Statistics</h2>
+                <InfoTooltip 
+                    title="Activity Statistics"
+                    content="Real-time statistics showing today's system activity including total actions, logins, deletions, and the most active user."
+                    position="right"
+                />
+            </div>
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 <!-- Total Actions Today -->
                 <div class="bg-white rounded-lg shadow-md p-6 border-l-4 border-blue-500">
@@ -74,10 +89,25 @@
 
             <!-- Filters Section -->
             <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <h2 class="text-lg font-semibold text-gray-900">Log Filters</h2>
+                    <InfoTooltip 
+                        title="Log Filters"
+                        content="Filter audit logs by keywords, action type, user role, module, or date range to find specific activities quickly."
+                        position="right"
+                    />
+                </div>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     <!-- Search Bar -->
                     <div class="lg:col-span-2">
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Search</label>
+                            <InfoTooltip 
+                                title="Search Logs"
+                                content="Search by username, user ID, action description, or any text in the log entries. Results update in real-time as you type."
+                                position="top"
+                            />
+                        </div>
                         <input
                             v-model="filters.search"
                             type="text"
@@ -89,7 +119,14 @@
 
                     <!-- Action Type Filter -->
                     <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Action Type</label>
+                        <div class="flex items-center gap-2 mb-2">
+                            <label class="block text-sm font-medium text-gray-700">Action Type</label>
+                            <InfoTooltip 
+                                title="Action Type Filter"
+                                content="Filter by type of action: Create (new records), Update (modifications), Delete (removals), or Login (user sessions)."
+                                position="top"
+                            />
+                        </div>
                         <select
                             v-model="filters.action"
                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-transparent"
@@ -429,6 +466,7 @@
 import { ref, computed, onMounted } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import InfoTooltip from '@/Components/InfoTooltip.vue';
 
 const props = defineProps({
     logs: Object,

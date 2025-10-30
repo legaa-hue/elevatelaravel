@@ -33,6 +33,7 @@ class ClassRecordController extends Controller
                         'first_name' => optional($c->teacher)->first_name,
                         'last_name' => optional($c->teacher)->last_name,
                     ],
+                    'midterm_grade' => $this->computeMidtermGrade($c),
                 ];
             });
 
@@ -55,6 +56,7 @@ class ClassRecordController extends Controller
                         'first_name' => optional($c->teacher)->first_name,
                         'last_name' => optional($c->teacher)->last_name,
                     ],
+                    'midterm_grade' => $this->computeMidtermGrade($c),
                 ];
             });
 
@@ -111,5 +113,102 @@ class ClassRecordController extends Controller
                 ] : null,
             ],
         ]);
+    }
+
+    /**
+     * Compute the midterm grade for a course (average of all students)
+     */
+    private function computeMidtermGrade(Course $course): ?float
+    {
+        $gradebook = $course->gradebook;
+        if (!$gradebook || !isset($gradebook['midterm'])) {
+            return null;
+        }
+        $period = $gradebook['midterm'];
+        $tables = $period['tables'] ?? [];
+        $gradesByStudent = $period['grades'] ?? [];
+        if (!is_array($gradesByStudent) || empty($gradesByStudent)) {
+            return null;
+        }
+
+        $sum = 0.0;
+        $count = 0;
+        foreach ($gradesByStudent as $studentId => $studentGrades) {
+            if (!is_array($studentGrades)) {
+                continue;
+            }
+            $sum += $this->calculatePeriodGradeFromData($studentGrades, $tables);
+            $count++;
+        }
+        return $count > 0 ? round($sum / $count, 2) : null;
+    }
+
+    /**
+     * Calculate a single student's period grade from gradebook tables/grades
+     */
+    private function calculatePeriodGradeFromData(array $studentGrades, array $tables): float
+    {
+        $total = 0.0;
+
+        foreach ($tables as $table) {
+            if (!empty($table['isSummary'])) {
+                continue; // skip summary tables
+            }
+            
+            $tableWeight = (float)($table['percentage'] ?? 0);
+            if ($tableWeight == 0) {
+                continue;
+            }
+            
+            $columns = $table['columns'] ?? [];
+            $columnWeightSum = 0.0;
+            
+            // Calculate total column percentage
+            foreach ($columns as $col) {
+                if (!empty($col['subcolumns'])) {
+                    $columnWeightSum += (float)($col['percentage'] ?? 0);
+                }
+            }
+
+            $tableTotal = 0.0;
+            if ($columnWeightSum > 0) {
+                foreach ($columns as $col) {
+                    if (empty($col['subcolumns'])) {
+                        continue;
+                    }
+                    
+                    $colId = $col['id'] ?? null;
+                    $colWeight = (float)($col['percentage'] ?? 0);
+                    $colScore = 0.0;
+                    $colMax = 0.0;
+                    
+                    // Calculate column score and max points
+                    foreach ($col['subcolumns'] as $sub) {
+                        $subId = $sub['id'] ?? null;
+                        $maxPoints = (float)($sub['maxPoints'] ?? 100);
+                        
+                        if ($colId && $subId) {
+                            $key = ($table['id'] ?? '') . '-' . $colId . '-' . $subId;
+                            $val = $studentGrades[$key] ?? 0;
+                            $colScore += is_numeric($val) ? (float)$val : 0.0;
+                        }
+                        $colMax += $maxPoints;
+                    }
+                    
+                    // Calculate percentage score for this column
+                    if ($colMax > 0) {
+                        $colPercentScore = $colScore / $colMax;
+                        // Normalized column weight
+                        $colNormalizedWeight = $colWeight / $columnWeightSum;
+                        $tableTotal += $colPercentScore * $colNormalizedWeight;
+                    }
+                }
+            }
+
+            // Apply table weight
+            $total += $tableTotal * ($tableWeight / 100) * 100;
+        }
+
+        return round($total, 2);
     }
 }

@@ -21,6 +21,7 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
+            'error' => session('error'),
         ]);
     }
 
@@ -35,6 +36,12 @@ class AuthenticatedSessionController extends Controller
 
         // Redirect based on user role
         $user = $request->user();
+        
+        // Check if email is verified
+        if (!$user->hasVerifiedEmail()) {
+            Auth::logout();
+            return redirect()->route('login')->with('error', 'Please verify your email address before logging in.');
+        }
         
         if ($user->role === 'admin') {
             return redirect()->intended(route('admin.dashboard', absolute: false));

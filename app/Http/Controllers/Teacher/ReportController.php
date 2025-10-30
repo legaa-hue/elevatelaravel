@@ -187,6 +187,8 @@ class ReportController extends Controller
         $this->authorizeCourse($course);
         NotificationService::notifyUser($request->student_id, 'feedback', 'Feedback', $request->message, [
             'course_id' => $course->id,
+            'course_title' => $course->title,
+            'teacher_name' => $course->teacher ? ($course->teacher->first_name . ' ' . $course->teacher->last_name) : null,
             'url' => "/student/courses/{$course->id}"
         ]);
         return response()->json(['status' => 'ok']);
