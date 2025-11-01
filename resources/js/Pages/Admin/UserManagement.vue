@@ -416,9 +416,43 @@ const generatePassword = () => {
                 </div>
             </div>
 
-            <!-- Users Table -->
+            <!-- Users Table (desktop) and List (mobile) -->
             <div class="bg-white rounded-lg shadow-md border border-gray-200 overflow-hidden">
-                <div class="overflow-x-auto">
+                <!-- Mobile list: show on small screens -->
+                <div class="md:hidden">
+                    <div v-if="users.length > 0" class="space-y-3 p-4">
+                        <div v-for="user in users" :key="user.id" class="bg-white border rounded-lg p-3 shadow-sm">
+                            <div class="flex items-start justify-between">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-full bg-red-900 flex items-center justify-center text-white font-semibold flex-shrink-0">
+                                        {{ user.name.charAt(0) }}
+                                    </div>
+                                    <div>
+                                        <div class="text-sm font-semibold text-gray-900">{{ user.name }}</div>
+                                        <div class="text-xs text-gray-600">{{ user.email }}</div>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="text-xs font-medium" :style="{ color: getRoleBadgeColor(user.role) }">{{ user.role.charAt(0).toUpperCase() + user.role.slice(1) }}</div>
+                                    <div class="text-xs text-gray-500">{{ new Date(user.created_at).toLocaleDateString() }}</div>
+                                </div>
+                            </div>
+                            <div class="mt-3 flex items-center justify-between gap-2">
+                                <div class="flex items-center gap-2">
+                                    <button @click="editUser(user)" class="text-blue-600 hover:text-blue-900 font-medium text-sm">Edit</button>
+                                    <button @click="deleteUser(user.id, user.name)" class="text-red-600 hover:text-red-900 font-medium text-sm">Delete</button>
+                                </div>
+                                <div>
+                                    <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" :style="{ backgroundColor: `${getStatusColor(user.status)}20`, color: getStatusColor(user.status) }">{{ user.status ? user.status.charAt(0).toUpperCase() + user.status.slice(1) : 'Active' }}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else class="text-center py-6 text-sm text-gray-600">No users found</div>
+                </div>
+
+                <!-- Desktop table: hidden on small screens -->
+                <div class="hidden md:block overflow-x-auto">
                     <table class="w-full">
                         <thead class="bg-gray-50 border-b border-gray-200">
                             <tr>

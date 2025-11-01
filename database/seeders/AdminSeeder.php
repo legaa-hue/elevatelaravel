@@ -14,37 +14,46 @@ class AdminSeeder extends Seeder
      */
     public function run(): void
     {
-        // Create admin account
-        User::create([
-            'name' => 'Admin User',
-            'first_name' => 'Admin',
-            'last_name' => 'User',
-            'email' => 'admin@elevategs.com',
-            'password' => Hash::make('admin123'),
-            'role' => 'admin',
-            'email_verified_at' => now(),
-        ]);
+        // Create or update admin account
+        User::updateOrCreate(
+            ['email' => 'admin@elevategs.com'],
+            [
+                'name' => 'Admin User',
+                'first_name' => 'Admin',
+                'last_name' => 'User',
+                'password' => Hash::make('admin123'),
+                'role' => 'admin',
+                'email_verified_at' => now(),
+                'is_active' => true,
+            ]
+        );
 
-        // Create a teacher account for testing
-        User::create([
-            'name' => 'John Doe',
-            'first_name' => 'John',
-            'last_name' => 'Doe',
-            'email' => 'teacher@elevategs.com',
-            'password' => Hash::make('teacher123'),
-            'role' => 'teacher',
-            'email_verified_at' => now(),
-        ]);
+        // Create or update teacher account
+        User::updateOrCreate(
+            ['email' => 'teacher@elevategs.com'],
+            [
+                'name' => 'John Doe',
+                'first_name' => 'John',
+                'last_name' => 'Doe',
+                'password' => Hash::make('teacher123'),
+                'role' => 'teacher',
+                'email_verified_at' => now(),
+                'is_active' => true,
+            ]
+        );
 
-        // Create a student account for testing
-        User::create([
-            'name' => 'Jane Smith',
-            'first_name' => 'Jane',
-            'last_name' => 'Smith',
-            'email' => 'student@elevategs.com',
-            'password' => Hash::make('student123'),
-            'role' => 'student',
-            'email_verified_at' => now(),
-        ]);
+        // Create or update student account
+        User::updateOrCreate(
+            ['email' => 'student@elevategs.com'],
+            [
+                'name' => 'Jane Smith',
+                'first_name' => 'Jane',
+                'last_name' => 'Smith',
+                'password' => Hash::make('student123'),
+                'role' => 'student',
+                'email_verified_at' => now(),
+                'is_active' => true,
+            ]
+        );
     }
 }

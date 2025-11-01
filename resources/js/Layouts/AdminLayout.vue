@@ -106,11 +106,16 @@ const isCurrentRoute = (routeName) => {
 
 <template>
     <div class="min-h-screen bg-gray-50">
+        <!-- Mobile overlay when sidebar open -->
+        <div v-if="sidebarOpen" @click="toggleSidebar" class="fixed inset-0 z-30 bg-black bg-opacity-40 lg:hidden"></div>
+
         <!-- Sidebar -->
         <aside
             :class="[
-                'fixed top-0 left-0 z-40 h-screen transition-all duration-300 ease-in-out bg-white border-r border-gray-200 shadow-sm',
-                sidebarOpen ? 'w-64' : 'w-20'
+                'fixed top-0 left-0 z-40 h-screen transition-transform duration-300 ease-in-out bg-white border-r border-gray-200 shadow-sm lg:translate-x-0',
+                // On small screens: when closed hide off-canvas (-translate-x-full). When open show (translate-x-0 w-64).
+                // On large screens (lg:), always translate-x-0, but width toggles between w-64 (open) and w-20 (collapsed).
+                sidebarOpen ? 'translate-x-0 w-64 lg:w-64' : '-translate-x-full w-64 lg:w-20'
             ]"
         >
             <!-- Sidebar Header -->
@@ -193,12 +198,19 @@ const isCurrentRoute = (routeName) => {
         <div
             :class="[
                 'transition-all duration-300 ease-in-out min-h-screen bg-white',
-                sidebarOpen ? 'ml-64' : 'ml-20'
+                // Use left margin only on large screens; on small screens main should be full width
+                sidebarOpen ? 'lg:ml-64 ml-0' : 'lg:ml-20 ml-0'
             ]"
         >
             <!-- Top Navigation Bar -->
-            <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-6 sticky top-0 z-30 shadow-sm">
-                <div>
+            <header class="bg-white border-b border-gray-200 h-16 flex items-center justify-between px-4 sm:px-6 sticky top-0 z-30 shadow-sm">
+                <div class="flex items-center">
+                    <!-- Mobile hamburger: visible on small screens to open sidebar -->
+                    <button @click="toggleSidebar" class="inline-flex items-center justify-center p-2 mr-3 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-red-900 lg:hidden" aria-label="Open sidebar">
+                        <svg class="w-6 h-6 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                    </button>
                     <h1 class="text-base md:text-xl font-semibold text-gray-900">Admin Dashboard</h1>
                 </div>
                 
@@ -270,3 +282,10 @@ const isCurrentRoute = (routeName) => {
         </div>
     </div>
 </template>
+
+<style scoped>
+/* Ensure sidebar hamburger is hidden on mobile */
+@media (max-width: 1023px) {
+    /* keep it visible on mobile; no-op removed */
+}
+</style>

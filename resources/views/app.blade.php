@@ -5,6 +5,7 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="description" content="ElevateGS - Learning Management System for USANT GradSchool. Progressive Web App accessible on all devices.">
         <meta name="theme-color" content="#800000">
+        <meta name="csrf-token" content="{{ csrf_token() }}">
 
         <title inertia>{{ config('app.name', 'ElevateGS') }}</title>
 

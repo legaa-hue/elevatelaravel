@@ -5,6 +5,10 @@ import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 
 const page = usePage();
+// Toast notification for email verification
+const showToast = ref(false);
+const toastMessage = ref('');
+const hideToast = () => { showToast.value = false; };
 const sidebarOpen = ref(false);
 const profileDropdownOpen = ref(false);
 const joinedCoursesDropdownOpen = ref(false);
@@ -30,6 +34,21 @@ const navigation = [
 const isActive = (routeName) => {
     return route().current(routeName);
 };
+
+// Show toast if ?verified=1 is in URL
+onMounted(() => {
+    if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('verified') === '1') {
+            toastMessage.value = 'Email has been verified.';
+            showToast.value = true;
+            // Remove ?verified=1 from URL after showing toast
+            params.delete('verified');
+            const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+            window.history.replaceState({}, '', newUrl);
+        }
+    }
+});
 
 // Join Course Form
 const joinCourseForm = ref({
@@ -248,6 +267,14 @@ onUnmounted(() => {
                         E
                     </div>
                     <div>
+                        <!-- Toast Notification -->
+                        <transition name="fade">
+                            <div v-if="showToast" class="fixed top-6 right-6 z-[9999] bg-green-600 text-white px-6 py-3 rounded shadow-lg flex items-center gap-3 animate-fade-in">
+                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                                <span>{{ toastMessage }}</span>
+                                <button @click="hideToast" class="ml-4 text-white hover:text-gray-200 focus:outline-none">&times;</button>
+                            </div>
+                        </transition>
                         <h1 class="text-lg font-bold bg-gradient-to-r from-black to-red-900 bg-clip-text text-transparent">ElevateGS</h1>
                         <p class="text-xs text-gray-600">Student Portal</p>
                     </div>
@@ -354,12 +381,19 @@ onUnmounted(() => {
                 <div v-if="sidebarOpen" class="space-y-2">
                     <!-- User Info -->
                     <div class="flex items-center gap-3 px-3 py-2">
-                        <div class="w-8 h-8 bg-red-900 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                            {{ user.first_name?.[0] }}{{ user.last_name?.[0] }}
+                        <div v-if="user && user.profile_picture" class="w-8 h-8 rounded-full overflow-hidden border-2 border-gray-200">
+                            <img 
+                                :src="user.profile_picture.startsWith('http') ? user.profile_picture : `/storage/${user.profile_picture}`" 
+                                :alt="`${user.first_name} ${user.last_name}`" 
+                                class="w-full h-full object-cover" 
+                            />
+                        </div>
+                        <div v-else class="w-8 h-8 bg-gradient-to-br from-red-900 to-red-700 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">
+                            {{ (user?.first_name?.[0] || 'S') }}{{ (user?.last_name?.[0] || '') }}
                         </div>
                         <div class="flex-1 min-w-0">
                             <p class="text-sm font-medium text-gray-900 truncate">
-                                {{ user.first_name }} {{ user.last_name }}
+                                {{ user?.first_name || 'Student' }} {{ user?.last_name || '' }}
                             </p>
                             <p class="text-xs text-gray-500">Student</p>
                         </div>
@@ -527,11 +561,20 @@ onUnmounted(() => {
                                 @click="profileDropdownOpen = !profileDropdownOpen"
                                 class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
                             >
-                                <div class="w-8 h-8 bg-red-900 rounded-full flex items-center justify-center text-white text-sm font-semibold">
-                                    {{ user.first_name?.[0] }}{{ user.last_name?.[0] }}
+                                <div v-if="user && user.profile_picture" class="w-8 h-8 rounded-full overflow-hidden border-2 border-gray-200">
+                                    <img 
+                                        :src="user.profile_picture.startsWith('http') ? user.profile_picture : `/storage/${user.profile_picture}`" 
+                                        :alt="`${user.first_name} ${user.last_name}`" 
+                                        class="w-full h-full object-cover" 
+                                    />
+                                </div>
+                                <div v-else class="w-8 h-8 bg-gradient-to-br from-red-900 to-red-700 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-md">
+                                    {{ (user?.first_name?.[0] || 'S') }}{{ (user?.last_name?.[0] || '') }}
                                 </div>
                                 <div class="hidden md:block text-left">
-                                    <p class="text-sm font-medium text-gray-900">{{ user.first_name }} {{ user.last_name }}</p>
+                                    <p class="text-sm font-medium text-gray-900">
+                                        {{ user?.first_name || 'Student' }} {{ user?.last_name || '' }}
+                                    </p>
                                     <p class="text-xs text-gray-500">Student</p>
                                 </div>
                                 <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -545,16 +588,28 @@ onUnmounted(() => {
                                 @click.away="profileDropdownOpen = false"
                                 class="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50"
                             >
+                                <div class="px-4 py-3 border-b border-gray-200">
+                                    <p class="text-sm font-semibold text-gray-900">
+                                        {{ user?.first_name || 'Student' }} {{ user?.last_name || '' }}
+                                    </p>
+                                    <p class="text-xs text-gray-500 truncate">{{ user?.email || '' }}</p>
+                                </div>
                                 <Link
-                                    href="/profile"
-                                    class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                                    :href="route('profile.edit')"
+                                    class="flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
                                 >
-                                    Profile
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                    Profile Settings
                                 </Link>
                                 <button
                                     @click="logout"
-                                    class="w-full text-left px-4 py-2 text-sm text-red-900 hover:bg-red-50"
+                                    class="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-900 hover:bg-red-50"
                                 >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                                    </svg>
                                     Logout
                                 </button>
                             </div>

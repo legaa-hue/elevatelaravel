@@ -22,6 +22,19 @@ class CourseController extends Controller
             'academic_year_id' => 'required|exists:academic_years,id',
         ]);
 
+        // Check if teacher already has a course with same course_template_id, section, and academic_year_id
+        $existingCourse = Course::where('teacher_id', auth()->id())
+            ->where('course_template_id', $validated['course_template_id'])
+            ->where('section', $validated['section'])
+            ->where('academic_year_id', $validated['academic_year_id'])
+            ->first();
+
+        if ($existingCourse) {
+            return redirect()->back()->withErrors([
+                'section' => 'You already have a course with this template and section for the selected academic year.'
+            ]);
+        }
+
         // Get course template to auto-fill title and units
         $courseTemplate = \App\Models\CourseTemplate::findOrFail($validated['course_template_id']);
         
@@ -54,6 +67,11 @@ class CourseController extends Controller
 
         if (!$course) {
             return redirect()->back()->withErrors(['join_code' => 'Invalid join code.']);
+        }
+
+        // Check if teacher is trying to join their own course
+        if ($course->teacher_id === auth()->id()) {
+            return redirect()->back()->withErrors(['join_code' => 'You cannot join your own course.']);
         }
 
         // Check if course is pending approval

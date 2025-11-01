@@ -26,7 +26,8 @@ Route::get('/dashboard', function () {
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
-    Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::post('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
 });
 
@@ -166,10 +167,10 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::post('/notifications/read-all', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.read-all');
     Route::delete('/notifications/{id}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
     
-    // Profile & Settings
+    // Profile & Settings (redirects to main profile route)
     Route::get('/profile', function () {
-        return Inertia::render('Teacher/Profile');
-    })->name('profile');
+        return redirect()->route('profile.edit');
+    })->name('teacher.profile');
     
     Route::get('/settings', function () {
         return Inertia::render('Teacher/Settings');
@@ -205,6 +206,11 @@ Route::middleware(['auth', 'verified', 'student'])->prefix('student')->name('stu
     Route::get('/progress', function () {
         return Inertia::render('Student/Progress');
     })->name('progress');
+    
+    // Profile (redirects to main profile route)
+    Route::get('/profile', function () {
+        return redirect()->route('profile.edit');
+    })->name('student.profile');
 });
 
 require __DIR__.'/auth.php';

@@ -28,6 +28,10 @@ class User extends Authenticatable implements MustVerifyEmail
         'google_id',
         'profile_picture',
         'status',
+        'is_active',
+        'activation_token',
+        'activation_token_expires_at',
+        'email_verified_at',
     ];
 
     /**
@@ -50,7 +54,74 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'activation_token_expires_at' => 'datetime',
         ];
+    }
+    
+    /**
+     * Generate and set activation token
+     */
+    public function generateActivationToken(): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $this->activation_token = hash('sha256', $token);
+        $this->activation_token_expires_at = now()->addHours(24);
+        $this->save();
+        
+        return $token; // Return plain token for email
+    }
+    
+    /**
+     * Activate user account
+     */
+    public function activate(): bool
+    {
+        $this->is_active = true;
+        $this->activation_token = null;
+        $this->activation_token_expires_at = null;
+        $this->email_verified_at = now();
+        
+        return $this->save();
+    }
+    
+    /**
+     * Check if activation token is valid
+     */
+    public function isActivationTokenValid(string $token): bool
+    {
+        if (!$this->activation_token || !$this->activation_token_expires_at) {
+            return false;
+        }
+        
+        if ($this->activation_token_expires_at->isPast()) {
+            return false;
+        }
+        
+        return hash('sha256', $token) === $this->activation_token;
+    }
+
+    /**
+     * Get push subscriptions for this user (WebPush feature)
+     * Returns empty collection if WebPush package is not installed
+     */
+    public function pushSubscriptions()
+    {
+        if (class_exists('NotificationChannels\WebPush\PushSubscription')) {
+            return $this->morphMany('NotificationChannels\WebPush\PushSubscription', 'subscribable');
+        }
+        return collect([]);
+    }
+
+    /**
+     * Route notification for WebPush channel
+     */
+    public function routeNotificationForWebPush()
+    {
+        if (class_exists('NotificationChannels\WebPush\PushSubscription')) {
+            return $this->pushSubscriptions;
+        }
+        return collect([]);
     }
 
     /**
@@ -69,5 +140,34 @@ class User extends Authenticatable implements MustVerifyEmail
         return $this->belongsToMany(Course::class, 'joined_courses', 'user_id', 'course_id')
                     ->withPivot('role')
                     ->withTimestamps();
+    }
+    
+    /**
+     * Get the identifier that will be stored in the subject claim of the JWT.
+     * Only used if JWT package is installed.
+     */
+    public function getJWTIdentifier()
+    {
+        if (interface_exists('Tymon\JWTAuth\Contracts\JWTSubject')) {
+            return $this->getKey();
+        }
+        return null;
+    }
+
+    /**
+     * Return a key value array, containing any custom claims to be added to the JWT.
+     * Only used if JWT package is installed.
+     */
+    public function getJWTCustomClaims()
+    {
+        if (interface_exists('Tymon\JWTAuth\Contracts\JWTSubject')) {
+            return [
+                'role' => $this->role,
+                'email' => $this->email,
+                'name' => $this->name,
+                'is_active' => $this->is_active,
+            ];
+        }
+        return [];
     }
 }

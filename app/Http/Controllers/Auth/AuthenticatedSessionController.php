@@ -37,10 +37,16 @@ class AuthenticatedSessionController extends Controller
         // Redirect based on user role
         $user = $request->user();
         
+        // Check if account is active
+        if (!$user->is_active) {
+            Auth::logout();
+            return redirect()->route('login')->with('error', 'Please activate your account via the email we sent. Didn\'t receive it? Contact support.');
+        }
+        
         // Check if email is verified
         if (!$user->hasVerifiedEmail()) {
             Auth::logout();
-            return redirect()->route('login')->with('error', 'Please verify your email address before logging in.');
+            return redirect()->route('login')->with('error', 'Please activate your account by verifying your email address. Didn\'t receive it? Resend activation email below.');
         }
         
         if ($user->role === 'admin') {

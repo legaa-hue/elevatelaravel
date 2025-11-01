@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Auth\AccountActivationController;
 use App\Http\Controllers\Auth\AuthenticatedSessionController;
 use App\Http\Controllers\Auth\ConfirmablePasswordController;
 use App\Http\Controllers\Auth\EmailVerificationNotificationController;
@@ -53,6 +54,21 @@ Route::middleware('guest')->group(function () {
     // Manual Email Verification
     Route::post('email/send-verification', [ManualEmailVerificationController::class, 'send'])
         ->name('email.send-verification');
+    
+    // Email Verification Link (for registration)
+    Route::post('email/send-code', [App\Http\Controllers\Auth\EmailVerificationController::class, 'send'])
+        ->name('email.send-code');
+    Route::get('email/verify/{token}', [App\Http\Controllers\Auth\EmailVerificationController::class, 'verifyLink'])
+        ->name('email.verify-link');
+    Route::post('email/check-verified', [App\Http\Controllers\Auth\EmailVerificationController::class, 'checkVerified'])
+        ->name('email.check-verified');
+    
+    // Account Activation
+    Route::get('activate/{token}', [AccountActivationController::class, 'activate'])
+        ->name('account.activate');
+    
+    Route::post('activate/resend', [AccountActivationController::class, 'resend'])
+        ->name('account.resend');
 });
 
 Route::middleware('auth')->group(function () {

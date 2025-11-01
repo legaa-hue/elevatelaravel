@@ -13,7 +13,7 @@ class ManualEmailVerificationController extends Controller
     /**
      * Send a verification email to the specified email address
      */
-    public function send(Request $request): JsonResponse
+    public function send(Request $request)
     {
         $request->validate([
             'email' => 'required|email|exists:users,email',
@@ -22,22 +22,16 @@ class ManualEmailVerificationController extends Controller
         $user = User::where('email', $request->email)->first();
 
         if (!$user) {
-            return response()->json([
-                'message' => 'User not found.',
-            ], 404);
+            return redirect()->back()->with('error', 'User not found.');
         }
 
         if ($user->hasVerifiedEmail()) {
-            return response()->json([
-                'message' => 'This email is already verified.',
-            ], 400);
+            return redirect()->back()->with('error', 'This email is already verified.');
         }
 
         // Send verification email
         $user->sendEmailVerificationNotification();
 
-        return response()->json([
-            'message' => 'Verification email sent successfully.',
-        ]);
+        return redirect()->back()->with('success', 'Verification email sent successfully.');
     }
 }

@@ -67,17 +67,22 @@ class GoogleAuthController extends Controller
                     $user->google_id = $googleUser->id;
                 }
                 
+                // Auto-verify email for Google users (they verified with Google)
+                if (!$user->hasVerifiedEmail()) {
+                    $user->email_verified_at = now();
+                }
+                
+                // Ensure account is active
+                if (!$user->is_active) {
+                    $user->is_active = true;
+                }
+                
                 $user->save();
                 
                 // Log the user in
                 Auth::login($user);
                 
-                // Check if email is verified
-                if (!$user->hasVerifiedEmail()) {
-                    return redirect()->route('verification.notice');
-                }
-                
-                // Redirect based on role
+                // Redirect based on role (no need to check verification since we just verified)
                 return $this->redirectBasedOnRole($user);
             } else {
                 // New user - check if role was pre-selected (from register page)
@@ -92,8 +97,8 @@ class GoogleAuthController extends Controller
                     // Log the user in
                     Auth::login($user);
                     
-                    // Redirect to email verification page
-                    return redirect()->route('verification.notice');
+                    // Redirect based on role (email is auto-verified for Google users)
+                    return $this->redirectBasedOnRole($user);
                 } else {
                     // No role selected - store Google user data and show role selection
                     session([
@@ -150,8 +155,8 @@ class GoogleAuthController extends Controller
         // Log the user in
         Auth::login($user);
 
-        // Redirect to email verification page
-        return redirect()->route('verification.notice');
+        // Redirect based on role (email is auto-verified for Google users)
+        return $this->redirectBasedOnRole($user);
     }
 
     /**
@@ -173,10 +178,11 @@ class GoogleAuthController extends Controller
             'profile_picture' => $googleUser->avatar ?? null,
             'password' => Hash::make(uniqid()), // Random password for Google users
             'role' => $role,
-            'email_verified_at' => null, // Require email verification even for Google users
+            'email_verified_at' => now(), // Auto-verify Google users since they logged in with Google
+            'is_active' => true, // Activate account immediately for Google users
         ]);
 
-        // Fire registered event to trigger verification email
+        // Fire registered event for any listeners (but email is already verified)
         event(new Registered($user));
 
         return $user;

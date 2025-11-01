@@ -5,6 +5,7 @@ namespace App\Http\Middleware;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Course;
+use App\Models\AcademicYear;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -30,16 +31,43 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        
         $sharedData = [
             ...parent::share($request),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user ? [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'first_name' => $user->first_name,
+                    'last_name' => $user->last_name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'profile_picture' => $user->profile_picture,
+                    'google_id' => $user->google_id,
+                    'is_active' => $user->is_active,
+                    'email_verified_at' => $user->email_verified_at,
+                ] : null,
+            ],
+            'csrf_token' => csrf_token(),
+            'flash' => [
+                'success' => fn () => $request->session()->get('success'),
+                'error' => fn () => $request->session()->get('error'),
             ],
         ];
 
         // Add pending courses count for admin users
-        if ($request->user() && $request->user()->role === 'admin') {
+        if ($user && $user->role === 'admin') {
             $sharedData['pendingCoursesCount'] = Course::where('status', 'Pending')->count();
+        }
+
+        // Add active academic year for all authenticated users
+        if ($user) {
+            $activeAcademicYear = AcademicYear::where('status', 'Active')->first();
+            $sharedData['activeAcademicYear'] = $activeAcademicYear ? [
+                'id' => $activeAcademicYear->id,
+                'year_name' => $activeAcademicYear->year_name,
+            ] : null;
         }
 
         return $sharedData;

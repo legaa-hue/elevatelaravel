@@ -15,10 +15,15 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        // Call AdminSeeder to create admin, teacher, and student accounts
+        $this->command->info('🌱 Starting database seeding...');
+        
+        // Call seeders in order
         $this->call([
             AdminSeeder::class,
             TeacherSeeder::class,
+            ProgramSeeder::class,
         ]);
+        
+        $this->command->info('✅ Database seeding completed successfully!');
     }
 }

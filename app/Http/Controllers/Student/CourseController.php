@@ -30,6 +30,13 @@ class CourseController extends Controller
             ]);
         }
 
+        // Check if student is trying to join a course they created (shouldn't happen but added for safety)
+        if ($course->teacher_id === auth()->id()) {
+            return back()->withErrors([
+                'join_code' => 'You cannot join your own course as a student.'
+            ]);
+        }
+
         // Check if already joined
         $alreadyJoined = JoinedCourse::where('user_id', auth()->id())
             ->where('course_id', $course->id)
