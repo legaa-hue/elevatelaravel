@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Api\JWTAuthController;
+use App\Http\Controllers\FileUploadController;
 use App\Http\Controllers\PushNotificationController;
 use Illuminate\Support\Facades\Route;
 
@@ -30,4 +31,12 @@ Route::middleware('auth:api')->group(function () {
     Route::post('/push/subscribe', [PushNotificationController::class, 'subscribe']);
     Route::post('/push/unsubscribe', [PushNotificationController::class, 'unsubscribe']);
     Route::post('/push/test', [PushNotificationController::class, 'sendTest']);
+
+    // File upload routes
+    Route::get('/files/config', [FileUploadController::class, 'config']);
+    Route::get('/files', [FileUploadController::class, 'index']);
+    Route::post('/files/upload', [FileUploadController::class, 'upload']);
+    Route::post('/files/upload-multiple', [FileUploadController::class, 'uploadMultiple']);
+    Route::get('/files/{file}', [FileUploadController::class, 'show']);
+    Route::delete('/files/{file}', [FileUploadController::class, 'destroy']);
 });

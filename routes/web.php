@@ -29,6 +29,11 @@ Route::middleware('auth')->group(function () {
     Route::post('/profile', [ProfileController::class, 'update'])->name('profile.update');
     Route::post('/profile/password', [ProfileController::class, 'updatePassword'])->name('profile.password.update');
     Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    
+    // File Upload Demo (for testing)
+    Route::get('/file-upload-demo', function () {
+        return Inertia::render('FileUploadDemo');
+    })->name('file-upload-demo');
 });
 
 // Admin Routes

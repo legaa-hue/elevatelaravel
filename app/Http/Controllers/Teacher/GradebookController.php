@@ -133,17 +133,67 @@ class GradebookController extends Controller
             'finals.grades' => 'nullable|array',
         ]);
 
+        // Filter out auto-populated grades (server-side defense)
+        $filterAuto = function($grades, $tables) {
+            if (!is_array($grades) || !is_array($tables)) return $grades;
+            
+            // Build set of auto-populated grade keys
+            $autoKeys = [];
+            foreach ($tables as $table) {
+                $tableId = $table['id'] ?? null;
+                if (!$tableId) continue;
+                
+                foreach (($table['columns'] ?? []) as $column) {
+                    $columnId = $column['id'] ?? null;
+                    if (!$columnId) continue;
+                    
+                    foreach (($column['subcolumns'] ?? []) as $subcolumn) {
+                        $subcolumnId = $subcolumn['id'] ?? null;
+                        $isAuto = $subcolumn['isAutoPopulated'] ?? false;
+                        
+                        if ($isAuto && $subcolumnId) {
+                            $autoKeys[] = "{$tableId}-{$columnId}-{$subcolumnId}";
+                        }
+                    }
+                }
+            }
+            
+            // Filter grades for each student
+            $filtered = [];
+            foreach ($grades as $studentId => $studentGrades) {
+                if (!is_array($studentGrades)) {
+                    $filtered[$studentId] = $studentGrades;
+                    continue;
+                }
+                
+                $filtered[$studentId] = [];
+                foreach ($studentGrades as $key => $value) {
+                    if (!in_array($key, $autoKeys)) {
+                        $filtered[$studentId][$key] = $value;
+                    }
+                }
+            }
+            
+            return $filtered;
+        };
+
         // Ensure default structure if not provided
         $gradebookData = [
             'midtermPercentage' => $validated['midtermPercentage'] ?? 50,
             'finalsPercentage' => $validated['finalsPercentage'] ?? 50,
-            'midterm' => $validated['midterm'] ?? [
-                'tables' => [],
-                'grades' => []
+            'midterm' => [
+                'tables' => $validated['midterm']['tables'] ?? [],
+                'grades' => $filterAuto(
+                    $validated['midterm']['grades'] ?? [],
+                    $validated['midterm']['tables'] ?? []
+                )
             ],
-            'finals' => $validated['finals'] ?? [
-                'tables' => [],
-                'grades' => []
+            'finals' => [
+                'tables' => $validated['finals']['tables'] ?? [],
+                'grades' => $filterAuto(
+                    $validated['finals']['grades'] ?? [],
+                    $validated['finals']['tables'] ?? []
+                )
             ]
         ];
 

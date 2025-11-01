@@ -50,7 +50,8 @@ const classworkForm = useForm({
 // Rubric and Quiz management
 const rubricCriteria = ref([]);
 const quizQuestions = ref([]);
-const fileAttachments = ref([]);
+const fileAttachments = ref([]); // New file uploads (File objects)
+const existingAttachments = ref([]); // Existing attachments from edit (metadata only)
 
 // Material filter
 const materialFilter = ref('all');
@@ -258,6 +259,7 @@ const openClassworkModal = () => {
     rubricCriteria.value = [];
     quizQuestions.value = [];
     fileAttachments.value = [];
+    existingAttachments.value = [];
     addRubricCriteria(); // Start with one criteria by default
     showClassworkModal.value = true;
 };
@@ -286,8 +288,9 @@ const openEditModal = (classwork) => {
         quizQuestions.value = [];
     }
     
-    // Load existing attachments
-    fileAttachments.value = classwork.attachments || [];
+    // Load existing attachments (for display only, not for submission)
+    existingAttachments.value = classwork.attachments || [];
+    fileAttachments.value = []; // Clear new file uploads
     showClassworkModal.value = true;
 };
 
@@ -326,6 +329,7 @@ const closeClassworkModal = () => {
     rubricCriteria.value = [];
     quizQuestions.value = [];
     fileAttachments.value = [];
+    existingAttachments.value = [];
 };
 
 const addRubricCriteria = () => {
@@ -417,32 +421,62 @@ const submitClasswork = () => {
         classworkForm.points = totalRubricPoints.value;
     }
 
-    // Add actual file objects to attachments for upload
-    // IMPORTANT: Inertia needs the actual File objects
-    classworkForm.attachments = fileAttachments.value;
-
     console.log('Submitting classwork:', {
         type: classworkForm.type,
         title: classworkForm.title,
         due_date: classworkForm.due_date,
         has_submission: classworkForm.has_submission,
-        attachments_count: fileAttachments.value.length,
+        new_attachments_count: fileAttachments.value.length,
+        existing_attachments_count: existingAttachments.value.length,
         rubric_criteria_count: classworkForm.rubric_criteria.length,
         quiz_questions_count: classworkForm.quiz_questions.length,
     });
 
     if (editingClasswork.value) {
+        // When editing: only send attachments if there are NEW files to upload
+        // If no new files, don't send attachments field at all to preserve existing ones
+        const updateData = {
+            ...classworkForm.data(),
+            _method: 'PUT'
+        };
+        
+        // Only include attachments if there are new files
+        if (fileAttachments.value.length > 0) {
+            updateData.attachments = fileAttachments.value;
+        } else {
+            // Don't send attachments field - backend will keep existing files
+            delete updateData.attachments;
+        }
+        
         // Update existing classwork
-        classworkForm.put(route('teacher.courses.classwork.update', {
+        // Use POST with _method=PUT for file uploads (Laravel requirement)
+        classworkForm.transform(() => updateData).post(route('teacher.courses.classwork.update', {
             course: props.course.id,
             classwork: editingClasswork.value.id
         }), {
             preserveScroll: true,
+            forceFormData: fileAttachments.value.length > 0, // Only force FormData if uploading files
             onSuccess: () => {
                 closeClassworkModal();
+                alert('Classwork updated successfully!');
             },
+            onError: (errors) => {
+                console.error('Failed to update classwork:', errors);
+                let errorMessage = 'Failed to update classwork:\n';
+                if (typeof errors === 'object') {
+                    Object.keys(errors).forEach(key => {
+                        errorMessage += `${key}: ${errors[key]}\n`;
+                    });
+                } else {
+                    errorMessage += errors;
+                }
+                alert(errorMessage);
+            }
         });
     } else {
+        // When creating: send all new file uploads
+        classworkForm.attachments = fileAttachments.value;
+        
         // Create new classwork
         // When posting with files, Inertia automatically converts to FormData
         classworkForm.post(route('teacher.courses.classwork.store', props.course.id), {

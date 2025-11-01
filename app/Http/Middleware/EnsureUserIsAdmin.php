@@ -15,7 +15,27 @@ class EnsureUserIsAdmin
      */
     public function handle(Request $request, Closure $next): Response
     {
-        if (!$request->user() || $request->user()->role !== 'admin') {
+        // Check if user is authenticated
+        if (!$request->user()) {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthenticated. Please login first.',
+                ], 401);
+            }
+            
+            return redirect()->route('login')->with('error', 'Please login to access this page.');
+        }
+
+        // Check if user is admin
+        if ($request->user()->role !== 'admin') {
+            if ($request->expectsJson()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized. Admin access required.',
+                ], 403);
+            }
+            
             abort(403, 'Unauthorized access. Admin role required.');
         }
 

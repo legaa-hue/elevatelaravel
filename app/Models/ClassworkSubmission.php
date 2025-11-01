@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class ClassworkSubmission extends Model
 {
@@ -45,5 +46,13 @@ class ClassworkSubmission extends Model
     public function gradedBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'graded_by');
+    }
+
+    /**
+     * Get all file uploads for this submission.
+     */
+    public function fileUploads(): MorphMany
+    {
+        return $this->morphMany(FileUpload::class, 'uploadable');
     }
 }

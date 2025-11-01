@@ -197,11 +197,19 @@ class CourseViewController extends Controller
             ],
             'classwork' => $classwork,
             // For gradebook tab
-            'students' => $course->students->map(function ($student) {
+            'students' => $course->students->map(function ($student) use ($classwork) {
+                // Get all graded/returned submissions for this student
+                $submissions = ClassworkSubmission::whereIn('classwork_id', $classwork->pluck('id'))
+                    ->where('student_id', $student->id)
+                    ->whereIn('status', ['graded', 'returned'])
+                    ->whereNotNull('grade')
+                    ->get(['id', 'classwork_id', 'student_id', 'grade']);
+                
                 return [
                     'id' => $student->id,
                     'name' => $student->first_name . ' ' . $student->last_name,
                     'email' => $student->email,
+                    'submissions' => $submissions,
                 ];
             }),
             'classworks' => Classwork::where('course_id', $course->id)
@@ -278,12 +286,12 @@ class CourseViewController extends Controller
         }
 
         // Get all graded submissions for classwork linked to gradebook
+        // Note: We only require classworkId mapping, not grade_sub_column
         $submissions = ClassworkSubmission::whereHas('classwork', function ($query) use ($course) {
             $query->where('course_id', $course->id)
                 ->whereNotNull('grading_period')
                 ->whereNotNull('grade_table_name')
-                ->whereNotNull('grade_main_column')
-                ->whereNotNull('grade_sub_column');
+                ->whereNotNull('grade_main_column');
         })
         ->whereIn('status', ['graded', 'returned'])
         ->whereNotNull('grade')

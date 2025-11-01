@@ -60,6 +60,22 @@ return [
             'report' => false,
         ],
 
+        'google' => [
+            'driver' => 'google',
+            'clientId' => env('GOOGLE_DRIVE_CLIENT_ID'),
+            'clientSecret' => env('GOOGLE_DRIVE_CLIENT_SECRET'),
+            'refreshToken' => env('GOOGLE_DRIVE_REFRESH_TOKEN'),
+            'folder' => env('GOOGLE_DRIVE_FOLDER'),
+        ],
+
+        'onedrive' => [
+            'driver' => 'onedrive',
+            'clientId' => env('ONEDRIVE_CLIENT_ID'),
+            'clientSecret' => env('ONEDRIVE_CLIENT_SECRET'),
+            'refreshToken' => env('ONEDRIVE_REFRESH_TOKEN'),
+            'folder' => env('ONEDRIVE_FOLDER'),
+        ],
+
     ],
 
     /*
