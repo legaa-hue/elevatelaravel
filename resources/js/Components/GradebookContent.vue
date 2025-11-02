@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
+import InfoTooltip from './InfoTooltip.vue';
 
 const props = defineProps({
     course: Object,
@@ -16,7 +17,6 @@ const showFinalsSection = ref(false);
 const isSaving = ref(false);
 const saveIndicator = ref(''); // '', 'Saving…', 'All changes saved'
 let saveTimer = null;
-const showTooltip = ref(false);
 
 const showAddTableModal = ref(false);
 const showEditTableModal = ref(false);
@@ -80,21 +80,16 @@ const createDefaultTables = (period = 'midterm') => {
             percentage: 0,
             isReadOnly: true,
             isSummary: true,
-            columns: [
-                {
-                    id: 'summary-col-1',
-                    name: 'Total Grade',
-                    percentage: 0,
-                    subcolumns: []
-                }
-            ]
+            columns: []
         }
     };
 };
 
 const midtermTables = ref(createDefaultTables('midterm'));
 const finalsTables = ref(createDefaultTables('finals'));
-const studentGrades = ref({});
+const studentGrades = ref({}); // Manual entries only (exams)
+const autoGrades = ref({}); // In-memory auto-populated grades from submissions
+const isInitializing = ref(true); // Gates autosave during initial load
 
 // Debug and initialize student grades
 console.log('GradebookContent - Students prop:', props.students);
@@ -135,6 +130,51 @@ const canAddTable = (period) => {
     return getTotalTablesPercentage(period) < 100;
 };
 
+// Update summary table columns dynamically based on existing tables
+const updateSummaryColumns = (period) => {
+    const tables = getCurrentTables(period);
+    const summaryTable = tables['summary'];
+    
+    if (!summaryTable) {
+        console.warn(`[Gradebook] Summary table not found for ${period}`);
+        return;
+    }
+    
+    // Create columns for each non-summary table
+    const newColumns = [];
+    Object.keys(tables).forEach(key => {
+        if (key !== 'summary' && !tables[key].isSummary) {
+            newColumns.push({
+                id: key,
+                name: tables[key].name,
+                percentage: 0,
+                subcolumns: [{
+                    id: `${key}-value`,
+                    name: 'Score',
+                    maxPoints: 100,
+                    isAutoPopulated: true
+                }]
+            });
+        }
+    });
+    
+    // Add a "Total" column at the end
+    newColumns.push({
+        id: 'total',
+        name: 'Total',
+        percentage: 0,
+        subcolumns: [{
+            id: 'total-value',
+            name: 'Score',
+            maxPoints: 100,
+            isAutoPopulated: true
+        }]
+    });
+    
+    summaryTable.columns = newColumns;
+    console.log(`[Gradebook] Updated ${period} summary columns:`, newColumns.length, newColumns);
+};
+
 const getColumnsTotalPercentage = (period, tableKey) => {
     const tables = getCurrentTables(period);
     const table = tables[tableKey];
@@ -156,21 +196,29 @@ const getRemainingColumnPercentage = (period, tableKey) => {
     return table.percentage - getColumnsTotalPercentage(period, tableKey);
 };
 
+// Get a specific summary column value for a student
+const getSummaryColumnValue = (studentId, period, columnId) => {
+    const tables = getCurrentTables(period);
+    
+    if (columnId === 'total') {
+        // Calculate grand total from all non-summary tables (this is the period grade)
+        return calculateStudentPeriodGrade(studentId, period);
+    } else {
+        // Return the value for a specific table (async, sync, exam)
+        const tableTotal = calculateStudentTableTotal(studentId, period, columnId);
+        return tableTotal || '0.00';
+    }
+};
+
 // Compute table total as: (totalScore / totalMaxPoints) * table.percentage (as decimal)
 const calculateStudentTableTotal = (studentId, period, tableKey) => {
     const tables = getCurrentTables(period);
     const table = tables[tableKey];
     if (!table) return '0.00';
 
-    // If this is the Summary table, calculate the total of all other tables
+    // If this is the Summary table, return N/A or use the summary column helper
     if (table.isSummary) {
-        let grandTotal = 0;
-        Object.keys(tables).forEach(key => {
-            if (key !== tableKey && !tables[key].isSummary) {
-                grandTotal += parseFloat(calculateStudentTableTotal(studentId, period, key)) || 0;
-            }
-        });
-        return grandTotal.toFixed(2);
+        return 'N/A';
     }
 
     // Normalize column weights so their sum is always 100% for the table
@@ -189,7 +237,12 @@ const calculateStudentTableTotal = (studentId, period, tableKey) => {
         let colMax = 0;
         column.subcolumns.forEach(subcolumn => {
             const gradeKey = `${tableKey}-${column.id}-${subcolumn.id}`;
-            const raw = parseFloat(studentGrades.value[studentId]?.[period]?.[gradeKey] ?? 0);
+            
+            // Use autoGrades for auto-populated subcolumns, studentGrades for manual entries
+            const raw = subcolumn.isAutoPopulated 
+                ? parseFloat(autoGrades.value[studentId]?.[period]?.[gradeKey] ?? 0)
+                : parseFloat(studentGrades.value[studentId]?.[period]?.[gradeKey] ?? 0);
+            
             const maxPoints = subcolumn.maxPoints || 100;
             const effectiveScore = (raw <= 1 && maxPoints > 1) ? (raw * maxPoints) : raw;
             colScore += isNaN(effectiveScore) ? 0 : effectiveScore;
@@ -219,6 +272,19 @@ const calculateStudentPeriodGrade = (studentId, period) => {
 
     // Cap at 100% to avoid overflow when weights are misconfigured
     return Math.min(total, 100).toFixed(2);
+};
+
+// Calculate the final computed grade combining midterm and finals
+const calculateFinalGrade = (studentId) => {
+    const midtermGrade = parseFloat(calculateStudentPeriodGrade(studentId, 'midterm')) || 0;
+    const finalsGrade = parseFloat(calculateStudentPeriodGrade(studentId, 'finals')) || 0;
+    
+    // Apply the weight percentages
+    const weightedMidterm = (midtermGrade * midtermPercentage.value) / 100;
+    const weightedFinals = (finalsGrade * finalsPercentage.value) / 100;
+    
+    const finalGrade = weightedMidterm + weightedFinals;
+    return Math.min(finalGrade, 100).toFixed(2);
 };
 
 const validateGradingPeriodPercentage = (period) => {
@@ -271,22 +337,29 @@ const populateSubcolumnsFromClassworks = () => {
     
     // Helper function to merge subcolumns (keep existing ones, add new ones from classworks)
     const mergeSubcolumns = (existingSubcolumns, newSubcolumns) => {
-        const merged = [...(existingSubcolumns || [])];
+        // Start with only manual subcolumns (not auto-populated)
+        const merged = (existingSubcolumns || []).filter(sub => !sub.isAutoPopulated);
         
+        // Build a set of auto-populated subcolumn names to detect conflicts
+        const autoNames = new Set(newSubcolumns.map(sub => sub.name.toLowerCase()));
+        
+        // Remove manual subcolumns that have the same name as incoming auto ones
+        const finalManual = merged.filter(sub => !autoNames.has(sub.name.toLowerCase()));
+        
+        // Add all auto-populated subcolumns from classworks (fresh each time)
         newSubcolumns.forEach(newSub => {
-            // Check if this classwork-based subcolumn already exists
-            const existingIndex = merged.findIndex(existing => 
-                existing.classworkId === newSub.classworkId || 
-                (existing.name === newSub.name && existing.isAutoPopulated)
+            // Only add if not already present by classworkId
+            const existingIndex = finalManual.findIndex(existing => 
+                existing.classworkId === newSub.classworkId
             );
             
             if (existingIndex === -1) {
                 // New auto subcolumn from classwork
-                merged.push(newSub);
+                finalManual.push(newSub);
             } else {
                 // Update existing auto subcolumn details (keep in sync with classwork)
-                merged[existingIndex] = {
-                    ...merged[existingIndex],
+                finalManual[existingIndex] = {
+                    ...finalManual[existingIndex],
                     name: newSub.name,
                     maxPoints: newSub.maxPoints,
                     classworkId: newSub.classworkId,
@@ -295,7 +368,7 @@ const populateSubcolumnsFromClassworks = () => {
             }
         });
         
-        return merged;
+        return finalManual;
     };
     
     if (grouped.midterm) {
@@ -383,53 +456,73 @@ const populateSubcolumnsFromClassworks = () => {
 
 // Populate grades from graded submissions
 const populateGradesFromSubmissions = async () => {
+    console.log('[populateGradesFromSubmissions] Using students submissions data directly');
+    
     try {
-        // Fetch graded submissions for this course
-        const response = await axios.get(`/teacher/courses/${props.course.id}/graded-submissions`);
-        const submissions = response.data.submissions || [];
+        // Use props.students with pre-loaded submissions (same data source as People tab)
+        if (!props.students || !Array.isArray(props.students)) {
+            console.warn('[populateGradesFromSubmissions] No students data available');
+            return;
+        }
         
-        // Map submissions to gradebook
-        submissions.forEach(submission => {
-            const classwork = props.classworks.find(cw => cw.id === submission.classwork_id);
-            
-            if (!classwork || !classwork.grading_period || !classwork.grade_table_name || 
-                !classwork.grade_main_column || !classwork.grade_sub_column) {
-                return; // Skip if classwork is not linked to gradebook
-            }
-            
-            const period = classwork.grading_period.toLowerCase();
-            const tables = period === 'midterm' ? midtermTables.value : finalsTables.value;
-            
-            // Find the table
-            const table = Object.values(tables).find(t => 
-                t.name.toLowerCase() === classwork.grade_table_name.toLowerCase()
-            );
-            
-            if (!table) return;
-            
-            // Find the column
-            const column = table.columns.find(c => 
-                c.name.toLowerCase() === classwork.grade_main_column.toLowerCase()
-            );
-            
-            if (!column) return;
-            
-            // Find the subcolumn
-            const subcolumn = column.subcolumns.find(sc => 
-                sc.classworkId === classwork.id || 
-                (sc.name === classwork.grade_sub_column && sc.isAutoPopulated)
-            );
-            
-            if (!subcolumn) return;
-            
-            // Set the grade
-            const gradeKey = `${table.id}-${column.id}-${subcolumn.id}`;
-            if (studentGrades.value[submission.student_id] && 
-                studentGrades.value[submission.student_id][period]) {
-                studentGrades.value[submission.student_id][period][gradeKey] = submission.grade;
+        // Initialize autoGrades for all students
+        props.students.forEach(student => {
+            if (!autoGrades.value[student.id]) {
+                autoGrades.value[student.id] = { midterm: {}, finals: {} };
             }
         });
-
+        
+        // Process each student's submissions
+        props.students.forEach(student => {
+            if (!student.submissions || !Array.isArray(student.submissions)) return;
+            
+            // Filter to graded/returned submissions only
+            const gradedSubmissions = student.submissions.filter(sub => 
+                ['graded', 'returned'].includes(sub.status) && sub.grade !== null && sub.grade !== undefined
+            );
+            
+            gradedSubmissions.forEach(submission => {
+                const classwork = props.classworks.find(cw => cw.id === submission.classwork_id);
+                
+                if (!classwork || !classwork.grading_period || !classwork.grade_table_name || 
+                    !classwork.grade_main_column) {
+                    return; // Skip if classwork is not linked to gradebook
+                }
+                
+                const period = classwork.grading_period.toLowerCase();
+                const tables = period === 'midterm' ? midtermTables.value : finalsTables.value;
+                
+                // Find the table
+                const table = Object.values(tables).find(t => 
+                    t.name.toLowerCase() === classwork.grade_table_name.toLowerCase()
+                );
+                
+                if (!table) return;
+                
+                // Find the column
+                const column = table.columns.find(c => 
+                    c.name.toLowerCase() === classwork.grade_main_column.toLowerCase()
+                );
+                
+                if (!column) return;
+                
+                // Find the subcolumn by classworkId (auto-populated subcolumns)
+                const subcolumn = column.subcolumns.find(sc => 
+                    sc.classworkId === classwork.id && sc.isAutoPopulated
+                );
+                
+                if (!subcolumn) return;
+                
+                // Set the grade in autoGrades (not studentGrades)
+                const gradeKey = `${table.id}-${column.id}-${subcolumn.id}`;
+                if (!autoGrades.value[student.id][period]) {
+                    autoGrades.value[student.id][period] = {};
+                }
+                autoGrades.value[student.id][period][gradeKey] = submission.grade;
+                console.log(`[populateGradesFromSubmissions] Set grade for student ${student.id}, ${classwork.title}: ${submission.grade}`);
+            });
+        });
+        
         // Default 0 for students without submissions in auto-populated subcolumns
         const ensureZeroForMissing = (periodTables, periodKey) => {
             Object.entries(periodTables).forEach(([tableKey, table]) => {
@@ -437,8 +530,8 @@ const populateGradesFromSubmissions = async () => {
                     (column.subcolumns || []).forEach(subcolumn => {
                         if (!subcolumn.isAutoPopulated) return;
                         const gradeKey = `${tableKey}-${column.id}-${subcolumn.id}`;
-                        Object.keys(studentGrades.value).forEach(studentId => {
-                            const periodGrades = studentGrades.value[studentId]?.[periodKey];
+                        Object.keys(autoGrades.value).forEach(studentId => {
+                            const periodGrades = autoGrades.value[studentId]?.[periodKey];
                             if (periodGrades && (periodGrades[gradeKey] === undefined || periodGrades[gradeKey] === null || periodGrades[gradeKey] === '')) {
                                 periodGrades[gradeKey] = 0;
                             }
@@ -450,14 +543,20 @@ const populateGradesFromSubmissions = async () => {
 
         ensureZeroForMissing(midtermTables.value, 'midterm');
         ensureZeroForMissing(finalsTables.value, 'finals');
+        
+        console.log('[populateGradesFromSubmissions] Auto grades populated:', autoGrades.value);
     } catch (error) {
-        console.error('Error loading submission grades:', error);
+        console.error('[populateGradesFromSubmissions] Error loading submission grades:', error);
     }
 };
 
 // Remove auto-populated subcolumns whose classwork no longer exists and clear their grades
 const cleanupRemovedClassworks = () => {
     const validIds = new Set((props.classworks || []).map(cw => cw.id));
+    console.log('[cleanupRemovedClassworks] Valid classwork IDs:', Array.from(validIds));
+    
+    let removedCount = 0;
+    
     const cleanup = (periodTables, periodKey) => {
         Object.entries(periodTables).forEach(([tableKey, table]) => {
             table.columns.forEach(column => {
@@ -465,11 +564,14 @@ const cleanupRemovedClassworks = () => {
                 column.subcolumns = (column.subcolumns || []).filter(sub => {
                     const keep = !sub.isAutoPopulated || validIds.has(sub.classworkId);
                     if (!keep) {
-                        // Delete saved grades for this subcolumn for all students
+                        console.log(`[cleanupRemovedClassworks] Removing subcolumn "${sub.name}" (classworkId: ${sub.classworkId})`);
+                        removedCount++;
+                        
+                        // Delete grades for this subcolumn from autoGrades (not studentGrades)
                         const gradeKey = `${tableKey}-${column.id}-${sub.id}`;
-                        Object.keys(studentGrades.value).forEach(studentId => {
-                            if (studentGrades.value[studentId]?.[periodKey]?.[gradeKey] !== undefined) {
-                                delete studentGrades.value[studentId][periodKey][gradeKey];
+                        Object.keys(autoGrades.value).forEach(studentId => {
+                            if (autoGrades.value[studentId]?.[periodKey]?.[gradeKey] !== undefined) {
+                                delete autoGrades.value[studentId][periodKey][gradeKey];
                             }
                         });
                     }
@@ -477,13 +579,19 @@ const cleanupRemovedClassworks = () => {
                 });
                 const after = column.subcolumns.length;
                 if (before !== after) {
-                    // Column changed; could trigger save
+                    console.log(`[cleanupRemovedClassworks] Column "${column.name}" subcolumns: ${before} -> ${after}`);
                 }
             });
         });
     };
     cleanup(midtermTables.value, 'midterm');
     cleanup(finalsTables.value, 'finals');
+    
+    if (removedCount > 0) {
+        console.log(`[Gradebook] Removed ${removedCount} auto-populated subcolumns`);
+    }
+    
+    return removedCount;
 };
 
 const toggleSection = (period) => {
@@ -912,7 +1020,39 @@ const deleteSubcolumn = (period, tableKey, columnIndex, subcolumnIndex) => {
     }
 };
 
+const filterAutoPopulatedGrades = (grades, tables) => {
+    // Build set of auto-populated grade keys
+    const autoKeys = new Set();
+    Object.entries(tables).forEach(([tableKey, table]) => {
+        (table.columns || []).forEach(column => {
+            (column.subcolumns || []).forEach(subcolumn => {
+                if (subcolumn.isAutoPopulated) {
+                    autoKeys.add(`${tableKey}-${column.id}-${subcolumn.id}`);
+                }
+            });
+        });
+    });
+    
+    // Filter out auto keys from grades
+    const filtered = {};
+    Object.keys(grades).forEach(studentId => {
+        filtered[studentId] = {};
+        Object.keys(grades[studentId] || {}).forEach(gradeKey => {
+            if (!autoKeys.has(gradeKey)) {
+                filtered[studentId][gradeKey] = grades[studentId][gradeKey];
+            }
+        });
+    });
+    
+    return filtered;
+};
+
 const saveGradebook = async () => {
+    if (isInitializing.value) {
+        console.log('[Gradebook] Skipping save during initialization');
+        return;
+    }
+    
     isSaving.value = true;
     saveIndicator.value = 'Saving…';
     try {
@@ -930,51 +1070,43 @@ const saveGradebook = async () => {
             });
             return flat;
         };
-        // Compute and persist period grades for all students
-        const periodGrades = { midterm: {}, finals: {} };
-        Object.keys(studentGrades.value).forEach(studentId => {
-            periodGrades.midterm[studentId] = calculateStudentPeriodGrade(studentId, 'midterm');
-            periodGrades.finals[studentId] = calculateStudentPeriodGrade(studentId, 'finals');
-        });
+        
+        // Filter out auto-populated grades before saving
+        const midtermGradesFiltered = filterAutoPopulatedGrades(
+            Object.keys(studentGrades.value).reduce((acc, studentId) => {
+                acc[studentId] = flattenGrades(studentGrades.value[studentId].midterm);
+                return acc;
+            }, {}),
+            midtermTables.value
+        );
+        
+        const finalsGradesFiltered = filterAutoPopulatedGrades(
+            Object.keys(studentGrades.value).reduce((acc, studentId) => {
+                acc[studentId] = flattenGrades(studentGrades.value[studentId].finals);
+                return acc;
+            }, {}),
+            finalsTables.value
+        );
+        
         const data = {
             midtermPercentage: midtermPercentage.value,
             finalsPercentage: finalsPercentage.value,
             midterm: {
                 tables: Object.values(midtermTables.value),
-                grades: Object.keys(studentGrades.value).reduce((acc, studentId) => {
-                    acc[studentId] = flattenGrades(studentGrades.value[studentId].midterm);
-                    return acc;
-                }, {}),
-                periodGrades: periodGrades.midterm
+                grades: midtermGradesFiltered
             },
             finals: {
                 tables: Object.values(finalsTables.value),
-                grades: Object.keys(studentGrades.value).reduce((acc, studentId) => {
-                    acc[studentId] = flattenGrades(studentGrades.value[studentId].finals);
-                    return acc;
-                }, {}),
-                periodGrades: periodGrades.finals
+                grades: finalsGradesFiltered
             }
         };
         
-        // Debug: log data to be saved
-        console.log('[DEBUG] Saving gradebook data to backend and localStorage:', data);
-        // Save to backend
-        try {
-            const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
-            console.log('[DEBUG] Gradebook saved to backend:', response.data);
-        } catch (err) {
-            console.warn('[DEBUG] Backend save failed, will rely on localStorage:', err);
-        }
-        // Always save to localStorage
-        try {
-            localStorage.setItem(`gradebook:${props.course.id}`, JSON.stringify({ ...data, _savedAt: Date.now() }));
-            console.log('[DEBUG] Gradebook data saved to localStorage:', localStorage.getItem(`gradebook:${props.course.id}`));
-        } catch (e) {
-            console.error('[DEBUG] Error saving to localStorage:', e);
-        }
+        // Save to backend only (no localStorage)
+        console.log('[Gradebook] Saving gradebook to database (manual grades only)');
+        const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
+        console.log('[Gradebook] Gradebook saved successfully:', response.data);
     } catch (error) {
-        console.error('Error saving gradebook:', error);
+        console.error('[Gradebook] Error saving gradebook:', error);
         alert('Error saving gradebook: ' + (error.response?.data?.message || error.message));
     } finally {
         isSaving.value = false;
@@ -1054,95 +1186,87 @@ const loadGradebook = async () => {
 };
 
 onMounted(async () => {
+    console.log('[Gradebook] Initializing...');
+    isInitializing.value = true;
+    
     await loadGradebook();
+    cleanupRemovedClassworks(); // Remove stale auto subcolumns first
     populateSubcolumnsFromClassworks();
-    populateGradesFromSubmissions();
-    // Always try to restore from local backup (offline safety)
-    try {
-        const cached = localStorage.getItem(`gradebook:${props.course.id}`);
-        console.log('[DEBUG] Attempting to restore gradebook from localStorage:', cached);
-        if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed?.midterm || parsed?.finals) {
-                // Restore grades to UI if not already present
-                if (parsed.midterm?.grades) {
-                    Object.keys(parsed.midterm.grades).forEach(studentId => {
-                        if (!studentGrades.value[studentId]) studentGrades.value[studentId] = { midterm: {}, finals: {} };
-                        if (Object.keys(studentGrades.value[studentId].midterm || {}).length === 0) {
-                            studentGrades.value[studentId].midterm = parsed.midterm.grades[studentId] || {};
-                        }
-                    });
-                }
-                if (parsed.finals?.grades) {
-                    Object.keys(parsed.finals.grades).forEach(studentId => {
-                        if (!studentGrades.value[studentId]) studentGrades.value[studentId] = { midterm: {}, finals: {} };
-                        if (Object.keys(studentGrades.value[studentId].finals || {}).length === 0) {
-                            studentGrades.value[studentId].finals = parsed.finals.grades[studentId] || {};
-                        }
-                    });
-                }
-                console.log('[DEBUG] Gradebook restored from localStorage:', parsed);
-            }
-        }
-    } catch (e) {
-        console.error('[DEBUG] Error restoring from localStorage:', e);
-    }
+    await populateGradesFromSubmissions();
+    
+    // Update summary table columns based on existing tables
+    updateSummaryColumns('midterm');
+    updateSummaryColumns('finals');
+    
+    // Initialization complete, enable autosave
+    isInitializing.value = false;
+    console.log('[Gradebook] Initialization complete');
 });
-
-// Ensure pending changes are flushed before leaving the page
-if (typeof window !== 'undefined') {
-    window.addEventListener('beforeunload', () => {
-        if (saveTimer) {
-            clearTimeout(saveTimer);
-            saveTimer = null;
-        }
-        // Best-effort synchronous save indicator; network call may not complete
-        try {
-            localStorage.setItem(`gradebook:${props.course.id}:lastExit`, String(Date.now()));
-        } catch (_) {}
-    });
-}
 
 // Watch for classworks change to keep gradebook in sync (add new, update points, remove deleted)
 watch(
     () => props.classworks,
-    async () => {
-        populateSubcolumnsFromClassworks();
+    async (newClassworks, oldClassworks) => {
+        console.log('[Gradebook] Classworks changed, syncing gradebook...');
+        console.log('[Gradebook] Old count:', oldClassworks?.length, 'New count:', newClassworks?.length);
+        
         cleanupRemovedClassworks();
+        populateSubcolumnsFromClassworks();
         await populateGradesFromSubmissions();
-        // Persist changes after sync
-        saveGradebook();
+        
+        if (!isInitializing.value) {
+            console.log('[Gradebook] Saving gradebook after classwork sync...');
+            saveGradebook();
+        }
     },
     { deep: true }
 );
+
+// Watch for students data change to refresh grades
+watch(
+    () => props.students,
+    async () => {
+        console.log('[Gradebook] Students data changed, refreshing grades...');
+        await populateGradesFromSubmissions();
+    },
+    { deep: true }
+);
+
+// Watch for changes to tables and update summary columns
+watch([midtermTables, finalsTables], () => {
+    updateSummaryColumns('midterm');
+    updateSummaryColumns('finals');
+}, { deep: true });
 </script>
 
 <template>
     <div class="space-y-6">
         <div class="bg-white rounded-lg shadow-md p-6">
             <div class="flex items-center justify-between mb-6">
-                <h2 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
-                    ⚙️ Grade Computation Setup
-                </h2>
-                <div class="relative">
-                    <button 
-                        @mouseenter="showTooltip = true" 
-                        @mouseleave="showTooltip = false"
-                        class="text-blue-600 hover:text-blue-800"
+                <div class="flex items-center gap-2">
+                    <h2 class="text-2xl font-bold text-gray-900 flex items-center gap-2">
+                        ⚙️ Grade Computation Setup
+                    </h2>
+                    <InfoTooltip
+                        title="Grade Computation Setup"
+                        position="right"
                     >
-                        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" />
-                        </svg>
-                    </button>
-                    <div v-if="showTooltip" class="absolute right-0 top-8 w-64 bg-gray-900 text-white text-sm rounded-lg p-3 shadow-xl z-10">
-                        This only affects the final grade computation: Final Grade = (Midterm × %Midterm) + (Finals × %Finals)
-                    </div>
+                        <p class="mb-2"><strong>Purpose:</strong> Configure how midterm and finals grades contribute to the final grade.</p>
+                        <p class="mb-2"><strong>Formula:</strong> Final Grade = (Midterm × %Midterm) + (Finals × %Finals)</p>
+                        <p><strong>Note:</strong> The two percentages must total 100%.</p>
+                    </InfoTooltip>
                 </div>
             </div>
 
-            <div class="grid grid-cols-2 gap-6">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Midterm Percentage</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                        Midterm Percentage
+                        <InfoTooltip 
+                            content="Set the weight of midterm grades in the final grade calculation. Must be between 0-100%. The midterm and finals percentages must add up to 100%."
+                            position="right"
+                        />
+                    </label>
                     <div class="flex items-center gap-2">
                         <input 
                             v-model.number="midtermPercentage"
@@ -1157,7 +1281,13 @@ watch(
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Finals Percentage</label>
+                    <label class="block text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
+                        Finals Percentage
+                        <InfoTooltip 
+                            content="Set the weight of finals grades in the final grade calculation. Must be between 0-100%. The midterm and finals percentages must add up to 100%."
+                            position="right"
+                        />
+                    </label>
                     <div class="flex items-center gap-2">
                         <input 
                             v-model.number="finalsPercentage"
@@ -1520,13 +1650,21 @@ watch(
                                             class="px-2 py-2 border-b border-l"
                                         >
                                             <!-- Read-only display for Summary table -->
-                                            <div 
-                                                v-if="table.isSummary"
-                                                class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700"
-                                            >
-                                                {{ calculateStudentTableTotal(student.id, 'midterm', tableKey) }}
-                                            </div>
-                                            <!-- Editable input for other tables -->
+                                            <template v-if="table.isSummary">
+                                                <div class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700">
+                                                    {{ getSummaryColumnValue(student.id, 'midterm', column.id) }}
+                                                </div>
+                                            </template>
+                                            <!-- Auto-populated (read-only, from submissions) -->
+                                            <input 
+                                                v-else-if="subcolumn.isAutoPopulated"
+                                                :value="autoGrades[student.id]?.midterm?.[`${tableKey}-${column.id}-${subcolumn.id}`] ?? 0"
+                                                type="number"
+                                                disabled
+                                                class="w-full px-2 py-1 text-sm border border-gray-300 rounded text-center bg-gray-100 cursor-not-allowed"
+                                                :title="'Auto-populated from submission: ' + (autoGrades[student.id]?.midterm?.[`${tableKey}-${column.id}-${subcolumn.id}`] ?? 0)"
+                                            />
+                                            <!-- Manual entry (editable, persisted) -->
                                             <input 
                                                 v-else
                                                 v-model="studentGrades[student.id].midterm[`${tableKey}-${column.id}-${subcolumn.id}`]"
@@ -1535,11 +1673,7 @@ watch(
                                                 :max="subcolumn.maxPoints"
                                                 min="0"
                                                 step="0.01"
-                                                :disabled="subcolumn.isAutoPopulated"
-                                                :class="subcolumn.isAutoPopulated 
-                                                    ? 'w-full px-2 py-1 text-sm border border-gray-300 rounded text-center bg-gray-100 cursor-not-allowed' 
-                                                    : 'w-full px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500'"
-                                                :title="subcolumn.isAutoPopulated ? 'This grade is automatically updated from classwork submissions' : ''"
+                                                class="w-full px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-blue-500"
                                             />
                                         </td>
                                         <td v-if="!column.subcolumns || column.subcolumns.length === 0" class="px-4 py-2 border-b border-l text-center text-sm text-gray-500">
@@ -1854,13 +1988,21 @@ watch(
                                             class="px-2 py-2 border-b border-l"
                                         >
                                             <!-- Read-only display for Summary table -->
-                                            <div 
-                                                v-if="table.isSummary"
-                                                class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700"
-                                            >
-                                                {{ calculateStudentTableTotal(student.id, 'finals', tableKey) }}
-                                            </div>
-                                            <!-- Editable input for other tables -->
+                                            <template v-if="table.isSummary">
+                                                <div class="w-full px-2 py-1 text-sm border border-purple-300 rounded text-center bg-purple-50 font-semibold text-purple-700">
+                                                    {{ getSummaryColumnValue(student.id, 'finals', column.id) }}
+                                                </div>
+                                            </template>
+                                            <!-- Auto-populated (read-only, from submissions) -->
+                                            <input 
+                                                v-else-if="subcolumn.isAutoPopulated"
+                                                :value="autoGrades[student.id]?.finals?.[`${tableKey}-${column.id}-${subcolumn.id}`] ?? 0"
+                                                type="number"
+                                                disabled
+                                                class="w-full px-2 py-1 text-sm border border-gray-300 rounded text-center bg-gray-100 cursor-not-allowed"
+                                                :title="'Auto-populated from submission: ' + (autoGrades[student.id]?.finals?.[`${tableKey}-${column.id}-${subcolumn.id}`] ?? 0)"
+                                            />
+                                            <!-- Manual entry (editable, persisted) -->
                                             <input 
                                                 v-else
                                                 v-model="studentGrades[student.id].finals[`${tableKey}-${column.id}-${subcolumn.id}`]"
@@ -1869,11 +2011,7 @@ watch(
                                                 :max="subcolumn.maxPoints"
                                                 min="0"
                                                 step="0.01"
-                                                :disabled="subcolumn.isAutoPopulated"
-                                                :class="subcolumn.isAutoPopulated 
-                                                    ? 'w-full px-2 py-1 text-sm border border-gray-300 rounded text-center bg-gray-100 cursor-not-allowed' 
-                                                    : 'w-full px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500'"
-                                                :title="subcolumn.isAutoPopulated ? 'This grade is automatically updated from classwork submissions' : ''"
+                                                class="w-full px-2 py-1 text-sm border border-gray-300 rounded text-center focus:ring-2 focus:ring-green-500"
                                             />
                                         </td>
                                         <td v-if="!column.subcolumns || column.subcolumns.length === 0" class="px-4 py-2 border-b border-l text-center text-sm text-gray-500">
@@ -1900,6 +2038,72 @@ watch(
                             <p class="text-2xl font-bold text-green-600">{{ calculateStudentPeriodGrade(student.id, 'finals') }}</p>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- AUTO-COMPUTED FINAL GRADES Section -->
+        <div v-if="showMidtermSection && showFinalsSection" class="mt-8 bg-gradient-to-r from-purple-500 to-indigo-600 rounded-lg shadow-lg overflow-hidden border-4 border-purple-600">
+            <div class="px-6 py-4 bg-purple-600">
+                <div class="flex items-center justify-between">
+                    <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                        </svg>
+                        AUTO-COMPUTED FINAL GRADES
+                    </h3>
+                    <div class="flex items-center gap-2">
+                        <InfoTooltip 
+                            title="Auto-Computed Final Grades"
+                            content="These grades are automatically calculated by combining Midterm and Finals grades using the percentages you set in Grade Computation Setup."
+                            position="left"
+                        />
+                    </div>
+                </div>
+                <p class="text-sm text-purple-100 mt-1">
+                    Midterm: {{ midtermPercentage }}% • Finals: {{ finalsPercentage }}%
+                </p>
+            </div>
+            
+            <div class="p-6 bg-white">
+                <div class="overflow-x-auto">
+                    <table class="w-full border-collapse">
+                        <thead>
+                            <tr class="bg-gradient-to-r from-purple-100 to-indigo-100">
+                                <th class="px-4 py-3 text-left text-sm font-bold text-gray-800 border-b-2 border-purple-300">Student</th>
+                                <th class="px-4 py-3 text-center text-sm font-bold text-gray-800 border-b-2 border-purple-300 border-l">Midterm Grade<br/><span class="text-xs font-normal">({{ midtermPercentage }}%)</span></th>
+                                <th class="px-4 py-3 text-center text-sm font-bold text-gray-800 border-b-2 border-purple-300 border-l">Finals Grade<br/><span class="text-xs font-normal">({{ finalsPercentage }}%)</span></th>
+                                <th class="px-4 py-3 text-center text-sm font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 border-b-2 border-purple-600 border-l">
+                                    <div class="flex items-center justify-center gap-2">
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"/>
+                                        </svg>
+                                        Total Grade
+                                    </div>
+                                </th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="student in props.students" :key="student.id" class="hover:bg-purple-50 transition-colors">
+                                <td class="px-4 py-3 border-b text-sm font-medium text-gray-900">{{ student.name }}</td>
+                                <td class="px-4 py-3 border-b border-l text-center">
+                                    <div class="inline-flex items-center justify-center px-3 py-1 bg-blue-100 text-blue-800 font-semibold rounded-full text-sm">
+                                        {{ calculateStudentPeriodGrade(student.id, 'midterm') }}
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 border-b border-l text-center">
+                                    <div class="inline-flex items-center justify-center px-3 py-1 bg-green-100 text-green-800 font-semibold rounded-full text-sm">
+                                        {{ calculateStudentPeriodGrade(student.id, 'finals') }}
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 border-b border-l text-center bg-gradient-to-r from-purple-50 to-indigo-50">
+                                    <div class="inline-flex items-center justify-center px-4 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-bold rounded-full text-lg shadow-lg">
+                                        {{ calculateFinalGrade(student.id) }}
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
