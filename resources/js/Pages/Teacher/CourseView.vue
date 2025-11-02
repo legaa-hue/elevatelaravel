@@ -392,7 +392,28 @@ const removeEnumerationAnswer = (questionIndex, answerIndex) => {
 
 const handleFileUpload = (event) => {
     const files = Array.from(event.target.files);
-    fileAttachments.value.push(...files);
+    const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+    const validFiles = [];
+    const invalidFiles = [];
+    
+    files.forEach(file => {
+        if (file.size <= maxSize) {
+            validFiles.push(file);
+        } else {
+            invalidFiles.push(file.name);
+        }
+    });
+    
+    if (validFiles.length > 0) {
+        fileAttachments.value.push(...validFiles);
+    }
+    
+    if (invalidFiles.length > 0) {
+        alert(`The following files exceed the 10MB limit and were not added:\n${invalidFiles.join('\n')}`);
+    }
+    
+    // Clear the input so the same file can be selected again if needed
+    event.target.value = '';
 };
 
 const removeFile = (index) => {
@@ -1829,6 +1850,7 @@ const exportClassStandings = () => {
                                         <div v-if="classworkForm.type !== 'quiz'">
                                             <label class="block text-sm font-medium text-gray-700 mb-2">
                                                 Attachments
+                                                <span class="text-xs text-gray-500 font-normal ml-1">(Max 10MB per file)</span>
                                             </label>
                                             <div class="space-y-2">
                                                 <input

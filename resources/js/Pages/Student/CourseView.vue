@@ -216,7 +216,29 @@ const getOfficeViewerUrl = (fileUrl) => {
 };
 
 const handleFileUpload = (event) => {
-    submissionFiles.value = Array.from(event.target.files);
+    const files = Array.from(event.target.files);
+    const maxSize = 20 * 1024 * 1024; // 20MB in bytes
+    const validFiles = [];
+    const invalidFiles = [];
+    
+    files.forEach(file => {
+        if (file.size <= maxSize) {
+            validFiles.push(file);
+        } else {
+            invalidFiles.push(file.name);
+        }
+    });
+    
+    if (validFiles.length > 0) {
+        submissionFiles.value = [...submissionFiles.value, ...validFiles];
+    }
+    
+    if (invalidFiles.length > 0) {
+        alert(`The following files exceed the 20MB limit and were not added:\n${invalidFiles.join('\n')}`);
+    }
+    
+    // Clear the input so the same file can be selected again if needed
+    event.target.value = '';
 };
 
 const removeFile = (index) => {
@@ -1211,7 +1233,7 @@ const unsubmitWork = () => {
                                     </svg>
                                     <p class="text-sm font-medium text-gray-700">Click to upload files</p>
                                     <p class="text-xs text-gray-500 mt-1">or drag and drop</p>
-                                    <p class="text-xs text-gray-500 mt-1">Max 10MB per file</p>
+                                    <p class="text-xs text-gray-500 mt-1">Max 20MB per file</p>
                                 </label>
                             </div>
                             

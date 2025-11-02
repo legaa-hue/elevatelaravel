@@ -4,6 +4,19 @@ import vue from '@vitejs/plugin-vue';
 import { VitePWA } from 'vite-plugin-pwa';
 
 export default defineConfig({
+    build: {
+        // Optimize chunk size and reduce preload warnings
+        cssCodeSplit: true,
+        modulePreload: {
+            polyfill: false, // Disable modulepreload polyfill
+        },
+        rollupOptions: {
+            output: {
+                // Better chunk splitting
+                manualChunks: undefined,
+            }
+        }
+    },
     plugins: [
         laravel({
             input: 'resources/js/app.js',
