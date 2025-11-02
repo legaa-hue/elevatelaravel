@@ -103,7 +103,7 @@ class CourseController extends Controller
             'last_accessed_at' => now(),
         ]);
 
-        $course = Course::with('user:id,first_name,last_name')
+        $course = Course::with(['user:id,first_name,last_name,email,profile_picture', 'teachers:id,first_name,last_name,email,profile_picture'])
             ->findOrFail($id);
 
         // Get course grades from gradebook (already cast to array in model)
@@ -244,6 +244,73 @@ class CourseController extends Controller
                 ];
             });
 
+        // Get all students in the course (including current student)
+        $classmates = $course->students()
+            ->get()
+            ->map(function ($student) use ($course) {
+                $pivot = $student->pivot;
+                
+                // Get all classwork for this course that requires submission
+                $classwork = $course->classworks()
+                    ->where('has_submission', true)
+                    ->where('status', '!=', 'draft')
+                    ->get();
+                
+                // Get submissions from this student for this course
+                $submissions = ClassworkSubmission::whereIn('classwork_id', $classwork->pluck('id'))
+                    ->where('student_id', $student->id)
+                    ->where('status', '!=', 'draft')
+                    ->get();
+                
+                // Calculate progress
+                $totalClasswork = $classwork->where('has_submission', true)->count();
+                $submittedCount = $submissions->where('status', '!=', 'draft')->pluck('classwork_id')->unique()->count();
+                $gradedCount = $submissions->whereIn('status', ['graded', 'returned'])->pluck('classwork_id')->unique()->count();
+                
+                // Calculate average grade
+                $gradedSubmissions = $submissions->whereIn('status', ['graded', 'returned'])->where('grade', '!=', null);
+                $averageGrade = $gradedSubmissions->count() > 0 
+                    ? round($gradedSubmissions->avg('grade'), 2)
+                    : null;
+                
+                // Calculate pending and not submitted counts
+                $pendingCount = $submissions->where('status', 'submitted')->count();
+                $notSubmittedCount = max(0, $totalClasswork - $submittedCount);
+                
+                return [
+                    'id' => $student->id,
+                    'name' => $student->first_name . ' ' . $student->last_name,
+                    'email' => $student->email,
+                    'profile_picture' => $student->profile_picture,
+                    'joined_at' => $pivot ? $pivot->created_at->format('M d, Y') : null,
+                    'is_current_user' => $student->id === auth()->id(),
+                    'progress' => [
+                        'total_classwork' => $totalClasswork,
+                        'submitted' => $submittedCount,
+                        'graded' => $gradedCount,
+                        'pending' => $pendingCount,
+                        'not_submitted' => $notSubmittedCount,
+                        'completion_rate' => $totalClasswork > 0 ? min(100, round(($submittedCount / $totalClasswork) * 100, 2)) : 0,
+                        'average_grade' => $averageGrade,
+                    ],
+                ];
+            });
+        
+        // Get instructors (course owner and additional teachers)
+        $instructors = collect([$course->user])
+            ->merge($course->teachers)
+            ->unique('id')
+            ->map(function ($teacher) use ($course) {
+                return [
+                    'id' => $teacher->id,
+                    'name' => $teacher->first_name . ' ' . $teacher->last_name,
+                    'email' => $teacher->email,
+                    'profile_picture' => $teacher->profile_picture,
+                    'is_owner' => $teacher->id === $course->user_id,
+                ];
+            })
+            ->values();
+
         return inertia('Student/CourseView', [
             'course' => [
                 'id' => $course->id,
@@ -258,6 +325,8 @@ class CourseController extends Controller
             'pendingClassworks' => $pendingClassworks,
             'completedClassworks' => $completedClassworks,
             'announcements' => $announcements,
+            'classmates' => $classmates,
+            'instructors' => $instructors,
         ]);
     }
 

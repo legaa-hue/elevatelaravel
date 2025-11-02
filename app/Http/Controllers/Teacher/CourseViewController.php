@@ -161,7 +161,7 @@ class CourseViewController extends Controller
                     
                     // Calculate pending and not submitted counts
                     $pendingCount = $submissions->where('status', 'submitted')->count();
-                    $notSubmittedCount = $totalClasswork - $submittedCount;
+                    $notSubmittedCount = max(0, $totalClasswork - $submittedCount);
                     
                     return [
                         'id' => $student->id,
@@ -175,7 +175,7 @@ class CourseViewController extends Controller
                             'graded' => $gradedCount,
                             'pending' => $pendingCount,
                             'not_submitted' => $notSubmittedCount,
-                            'completion_rate' => $totalClasswork > 0 ? round(($submittedCount / $totalClasswork) * 100, 2) : 0,
+                            'completion_rate' => $totalClasswork > 0 ? min(100, round(($submittedCount / $totalClasswork) * 100, 2)) : 0,
                             'average_grade' => $averageGrade,
                         ],
                         'recent_submissions' => $recentSubmissions,

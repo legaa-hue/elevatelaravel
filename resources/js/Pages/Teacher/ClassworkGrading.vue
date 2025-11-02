@@ -441,8 +441,15 @@ const getFileIcon = (filename) => {
                     >
                         <div class="flex items-center justify-between">
                             <div class="flex items-center gap-4 flex-1">
-                                <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                                    {{ student.name.charAt(0) }}
+                                <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0 relative">
+                                    <img v-if="student.profile_picture" 
+                                         :src="student.profile_picture" 
+                                         :alt="student.name"
+                                         class="w-full h-full object-cover absolute inset-0"
+                                    />
+                                    <span v-if="!student.profile_picture" class="z-10">
+                                        {{ student.name.charAt(0) }}
+                                    </span>
                                 </div>
                                 <div class="flex-1">
                                     <h3 class="font-semibold text-gray-900">{{ student.name }}</h3>

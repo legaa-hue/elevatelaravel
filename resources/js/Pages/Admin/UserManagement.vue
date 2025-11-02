@@ -424,8 +424,15 @@ const generatePassword = () => {
                         <div v-for="user in users" :key="user.id" class="bg-white border rounded-lg p-3 shadow-sm">
                             <div class="flex items-start justify-between">
                                 <div class="flex items-center gap-3">
-                                    <div class="w-10 h-10 rounded-full bg-red-900 flex items-center justify-center text-white font-semibold flex-shrink-0">
-                                        {{ user.name.charAt(0) }}
+                                    <div class="w-10 h-10 rounded-full bg-red-900 flex items-center justify-center text-white font-semibold flex-shrink-0 overflow-hidden relative">
+                                        <img v-if="user.profile_picture" 
+                                             :src="user.profile_picture" 
+                                             :alt="user.name"
+                                             class="w-full h-full object-cover absolute inset-0"
+                                        />
+                                        <span v-if="!user.profile_picture" class="z-10">
+                                            {{ user.name.charAt(0) }}
+                                        </span>
                                     </div>
                                     <div>
                                         <div class="text-sm font-semibold text-gray-900">{{ user.name }}</div>
@@ -468,8 +475,15 @@ const generatePassword = () => {
                             <tr v-for="user in users" :key="user.id" class="hover:bg-gray-50 transition-colors">
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <div class="flex items-center">
-                                        <div class="w-10 h-10 rounded-full bg-red-900 flex items-center justify-center text-white font-semibold flex-shrink-0">
-                                            {{ user.name.charAt(0) }}
+                                        <div class="w-10 h-10 rounded-full bg-red-900 flex items-center justify-center text-white font-semibold flex-shrink-0 overflow-hidden relative">
+                                            <img v-if="user.profile_picture" 
+                                                 :src="user.profile_picture" 
+                                                 :alt="user.name"
+                                                 class="w-full h-full object-cover absolute inset-0"
+                                            />
+                                            <span v-if="!user.profile_picture" class="z-10">
+                                                {{ user.name.charAt(0) }}
+                                            </span>
                                         </div>
                                         <div class="ml-4">
                                             <div class="text-sm font-semibold text-gray-900">{{ user.name }}</div>

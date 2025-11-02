@@ -24,11 +24,13 @@ class ProgressController extends Controller
         $result = $courses->map(function (Course $course) use ($user) {
             $gradebook = $course->gradebook ?? [];
 
-            // Normalize course status
-            $statusRaw = strtolower((string)($course->status ?? 'pending'));
-            $status = match (true) {
-                str_contains($statusRaw, 'complete') => 'completed',
-                str_contains($statusRaw, 'progress') => 'in_progress',
+            // Normalize course status - map database status to display status
+            $statusRaw = strtolower((string)($course->status ?? 'Pending'));
+            $status = match ($statusRaw) {
+                'active' => 'in_progress',
+                'inactive' => 'completed',
+                'archived' => 'completed',
+                'pending' => 'pending',
                 default => 'pending',
             };
 
@@ -51,28 +53,26 @@ class ProgressController extends Controller
                 // Compute period percent for this student
                 $periodPercents[$periodKey] = $this->calculatePeriodGradeFromData($studentGrades, $tables);
 
-                foreach ($tables as $table) {
+                foreach ($tables as $tableIdx => $table) {
                     if (!empty($table['isSummary'])) {
                         continue;
                     }
                     $category = $table['category'] ?? $this->guessCategory(($table['title'] ?? '') . ' ' . ($table['name'] ?? ''));
                     $columns = $table['columns'] ?? [];
-                    foreach ($columns as $col) {
+                    foreach ($columns as $colIdx => $col) {
                         $colTitle = $col['title'] ?? $col['name'] ?? ('Column ' . ($col['id'] ?? '?'));
-                        $colId = $col['id'] ?? null;
                         $totalItems = 0;
                         $score = 0.0;
-                        foreach (($col['subcolumns'] ?? []) as $sub) {
-                            $subId = $sub['id'] ?? null;
-                            $max = (float)($sub['total'] ?? $sub['max'] ?? 0);
-                            $totalItems += is_numeric($max) ? (int)$max : 0;
-                            if ($colId && $subId) {
-                                $key = ($table['id'] ?? '') . '-' . $colId . '-' . $subId;
-                                $val = $studentGrades[$key] ?? 0;
-                                $score += is_numeric($val) ? (float)$val : 0.0;
+                        foreach (($col['subcolumns'] ?? []) as $subIdx => $sub) {
+                            $maxPoints = (float)($sub['maxPoints'] ?? $sub['total'] ?? $sub['max'] ?? 100);
+                            $totalItems += $maxPoints;
+                            // Access grades using nested array indices: studentGrades[tableIdx][colIdx][subIdx]
+                            $val = $studentGrades[$tableIdx][$colIdx][$subIdx] ?? null;
+                            if ($val !== null && $val !== '' && is_numeric($val)) {
+                                $score += (float)$val;
                             }
                         }
-                        $percent = $totalItems > 0 ? round(($score / max($totalItems, 1)) * 100, 2) : null;
+                        $percent = $totalItems > 0 ? round(($score / $totalItems) * 100, 2) : null;
                         $rows[] = [
                             'period' => ucfirst($periodKey),
                             'category' => $category,
@@ -97,7 +97,7 @@ class ProgressController extends Controller
 
             // Remarks only if course is completed and weighted has value
             $remark = null;
-            if ($status === 'completed' && $weightedAvg !== null) {
+            if ($status === 'completed' && $weightedAvg !== null && $weightedAvg > 0) {
                 $remark = $weightedAvg >= 75 ? 'passed' : 'retake';
             }
 
@@ -115,7 +115,7 @@ class ProgressController extends Controller
                     'midterm' => $periodPercents['midterm'],
                     'finals' => $periodPercents['finals'],
                 ],
-                'weightedAverage' => $status === 'completed' ? $weightedAvg : null,
+                'weightedAverage' => $weightedAvg, // Show weighted average for all courses with grades
                 'remark' => $remark, // 'passed' | 'retake' | null
                 'rows' => $rows,
             ];
@@ -159,7 +159,7 @@ class ProgressController extends Controller
     {
         $total = 0.0;
 
-        foreach ($tables as $table) {
+        foreach ($tables as $tableIdx => $table) {
             if (!empty($table['isSummary'])) {
                 continue;
             }
@@ -181,25 +181,24 @@ class ProgressController extends Controller
 
             $tableTotal = 0.0;
             if ($columnWeightSum > 0) {
-                foreach ($columns as $col) {
+                foreach ($columns as $colIdx => $col) {
                     if (empty($col['subcolumns'])) {
                         continue;
                     }
                     
-                    $colId = $col['id'] ?? null;
                     $colWeight = (float)($col['percentage'] ?? 0);
                     $colScore = 0.0;
                     $colMax = 0.0;
                     
-                    // Calculate column score and max points
-                    foreach ($col['subcolumns'] as $sub) {
-                        $subId = $sub['id'] ?? null;
+                    // Calculate column score and max points using nested array indices
+                    foreach ($col['subcolumns'] as $subIdx => $sub) {
                         $maxPoints = (float)($sub['maxPoints'] ?? 100);
                         
-                        if ($colId && $subId) {
-                            $key = ($table['id'] ?? '') . '-' . $colId . '-' . $subId;
-                            $val = $studentGrades[$key] ?? 0;
-                            $colScore += is_numeric($val) ? (float)$val : 0.0;
+                        // Access grades using nested array indices: studentGrades[tableIdx][colIdx][subIdx]
+                        $val = $studentGrades[$tableIdx][$colIdx][$subIdx] ?? null;
+                        // Only add score if value exists and is numeric
+                        if ($val !== null && $val !== '' && is_numeric($val)) {
+                            $colScore += (float)$val;
                         }
                         $colMax += $maxPoints;
                     }

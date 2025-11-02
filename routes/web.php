@@ -208,9 +208,7 @@ Route::middleware(['auth', 'verified', 'student'])->prefix('student')->name('stu
         return Inertia::render('Student/Courses');
     })->name('courses');
     
-    Route::get('/progress', function () {
-        return Inertia::render('Student/Progress');
-    })->name('progress');
+    Route::get('/progress', [\App\Http\Controllers\Student\ProgressController::class, 'index'])->name('progress');
     
     // Profile (redirects to main profile route)
     Route::get('/profile', function () {

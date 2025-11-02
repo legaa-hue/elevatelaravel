@@ -11,6 +11,14 @@ const props = defineProps({
     pendingClassworks: Array,
     completedClassworks: Array,
     announcements: Array,
+    classmates: {
+        type: Array,
+        default: () => []
+    },
+    instructors: {
+        type: Array,
+        default: () => []
+    },
     feedbacks: {
         type: Array,
         default: () => []
@@ -686,28 +694,213 @@ const unsubmitWork = () => {
 
                     <!-- People Tab -->
                     <div v-if="activeTab === 'people'" class="space-y-6">
-                        <!-- Teacher Section -->
-                        <div>
-                            <h3 class="text-lg font-semibold text-gray-900 mb-3">Teacher</h3>
-                            <div class="flex items-center gap-3 p-4 border border-gray-200 rounded-lg">
-                                <div class="w-10 h-10 bg-red-900 rounded-full flex items-center justify-center text-white font-semibold">
-                                    {{ course.teacher_name.split(' ')[0][0] }}{{ course.teacher_name.split(' ')[1]?.[0] || '' }}
-                                </div>
-                                <div>
-                                    <p class="font-medium text-gray-900">{{ course.teacher_name }}</p>
-                                    <p class="text-sm text-gray-500">Course Instructor</p>
+                        <!-- Instructors Section -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-6">
+                            <div class="flex items-center gap-2 mb-4">
+                                <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                </svg>
+                                <h3 class="text-lg font-semibold text-gray-900">Instructors</h3>
+                                <span class="text-sm text-gray-500">({{ instructors?.length || 0 }})</span>
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div v-for="instructor in instructors" :key="instructor.id" 
+                                     class="flex items-center gap-3 p-3 border border-gray-200 rounded-lg hover:border-red-300 hover:shadow-sm transition">
+                                    <div class="w-12 h-12 rounded-full bg-red-100 border-2 border-red-300 flex items-center justify-center text-red-700 font-semibold flex-shrink-0 overflow-hidden">
+                                        <img v-if="instructor.profile_picture" 
+                                             :src="instructor.profile_picture" 
+                                             :alt="instructor.name"
+                                             class="w-full h-full object-cover"
+                                        />
+                                        <span v-if="!instructor.profile_picture" class="text-sm">
+                                            {{ instructor.name.split(' ')[0][0] }}{{ instructor.name.split(' ')[1]?.[0] || '' }}
+                                        </span>
+                                    </div>
+                                    <div class="flex-1 min-w-0">
+                                        <h4 class="font-semibold text-gray-900 truncate">{{ instructor.name }}</h4>
+                                        <p class="text-xs text-gray-500 truncate">{{ instructor.email }}</p>
+                                        <span v-if="instructor.is_owner" class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-red-50 border border-red-200 text-red-700 text-xs font-medium rounded">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                                            </svg>
+                                            OWNER
+                                        </span>
+                                        <span v-else class="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-gray-50 border border-gray-200 text-gray-600 text-xs font-medium rounded">
+                                            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                            </svg>
+                                            Instructor
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Students Section -->
-                        <div>
-                            <h3 class="text-lg font-semibold text-gray-900 mb-3">Classmates</h3>
-                            <div class="text-center py-8 text-gray-500 border border-gray-200 rounded-lg">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                        <!-- Students Section with Progress Tracking -->
+                        <div class="bg-white border border-gray-200 rounded-lg p-6">
+                            <div class="flex items-center gap-2 mb-4">
+                                <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                                 </svg>
-                                <p class="mt-2">Loading classmates...</p>
+                                <h3 class="text-lg font-semibold text-gray-900">Classmates - Progress Tracking</h3>
+                                <span class="text-sm text-gray-500">({{ classmates?.length || 0 }})</span>
+                            </div>
+                            
+                            <div v-if="!classmates || classmates.length === 0" class="text-center py-12 text-gray-400 border-2 border-dashed border-gray-200 rounded-lg">
+                                <svg class="mx-auto h-16 w-16 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                </svg>
+                                <p class="mt-3 text-sm font-medium">No classmates yet</p>
+                                <p class="mt-1 text-xs">Students will appear here once they join</p>
+                            </div>
+
+                            <div v-else class="space-y-4">
+                                <div v-for="classmate in classmates" :key="classmate.id" 
+                                     :class="[
+                                         'border rounded-lg p-4 transition-all',
+                                         classmate.is_current_user 
+                                             ? 'border-2 border-blue-400 bg-blue-50 shadow-sm' 
+                                             : 'border-gray-200 bg-white hover:border-blue-200 hover:shadow-sm'
+                                     ]">
+                                    <!-- Student Header -->
+                                    <div class="flex items-start gap-4 mb-4">
+                                        <div class="relative flex-shrink-0">
+                                            <div class="w-14 h-14 rounded-full border-2 overflow-hidden"
+                                                 :class="classmate.is_current_user ? 'border-blue-400 bg-blue-100' : 'border-gray-300 bg-gray-100'">
+                                                <img v-if="classmate.profile_picture" 
+                                                     :src="classmate.profile_picture" 
+                                                     :alt="classmate.name"
+                                                     class="w-full h-full object-cover"
+                                                />
+                                                <div v-else class="w-full h-full flex items-center justify-center text-gray-600 font-bold text-lg">
+                                                    {{ classmate.name.charAt(0) }}
+                                                </div>
+                                            </div>
+                                            <div v-if="classmate.is_current_user" 
+                                                 class="absolute -bottom-1 -right-1 w-5 h-5 bg-blue-500 border-2 border-white rounded-full flex items-center justify-center">
+                                                <svg class="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <h4 class="font-semibold text-gray-900">{{ classmate.name }}</h4>
+                                                <span v-if="classmate.is_current_user" 
+                                                      class="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-100 border border-blue-300 text-blue-700 text-xs font-semibold rounded">
+                                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                                    </svg>
+                                                    You
+                                                </span>
+                                            </div>
+                                            <p class="text-xs text-gray-500 mt-0.5">{{ classmate.email }}</p>
+                                            <div class="flex items-center gap-1 mt-1 text-xs text-gray-400">
+                                                <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                                </svg>
+                                                Joined {{ classmate.joined_at }}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Divider -->
+                                    <div class="border-t border-gray-200 mb-4"></div>
+                                    
+                                    <!-- Progress Section -->
+                                    <div class="space-y-3">
+                                        <!-- Completion Bar -->
+                                        <div>
+                                            <div class="flex items-center justify-between mb-1.5">
+                                                <div class="flex items-center gap-1.5">
+                                                    <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                    </svg>
+                                                    <span class="text-xs font-medium text-gray-700">Overall Progress</span>
+                                                </div>
+                                                <span class="text-sm font-bold text-gray-900">{{ Math.min(classmate.progress.completion_rate, 100) }}%</span>
+                                            </div>
+                                            <div class="w-full bg-gray-200 rounded-full h-2.5 overflow-hidden border border-gray-300">
+                                                <div class="h-full rounded-full transition-all duration-500"
+                                                     :class="{
+                                                         'bg-gradient-to-r from-green-400 to-green-600': classmate.progress.completion_rate >= 80,
+                                                         'bg-gradient-to-r from-blue-400 to-blue-600': classmate.progress.completion_rate >= 50 && classmate.progress.completion_rate < 80,
+                                                         'bg-gradient-to-r from-yellow-400 to-yellow-600': classmate.progress.completion_rate >= 30 && classmate.progress.completion_rate < 50,
+                                                         'bg-gradient-to-r from-red-400 to-red-600': classmate.progress.completion_rate < 30
+                                                     }"
+                                                     :style="{ width: Math.min(classmate.progress.completion_rate, 100) + '%' }">
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Stats Grid -->
+                                        <div class="grid grid-cols-2 gap-3">
+                                            <!-- Submitted -->
+                                            <div class="flex items-center gap-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                                                <svg class="w-4 h-4 text-blue-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-xs text-blue-600 font-medium">Submitted</p>
+                                                    <p class="text-sm font-bold text-blue-700">{{ classmate.progress.submitted }}/{{ classmate.progress.total_classwork }}</p>
+                                                </div>
+                                            </div>
+
+                                            <!-- Graded -->
+                                            <div class="flex items-center gap-2 p-2 bg-green-50 border border-green-200 rounded">
+                                                <svg class="w-4 h-4 text-green-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                                                </svg>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-xs text-green-600 font-medium">Graded</p>
+                                                    <p class="text-sm font-bold text-green-700">{{ classmate.progress.graded }}</p>
+                                                </div>
+                                            </div>
+
+                                            <!-- Pending -->
+                                            <div class="flex items-center gap-2 p-2 bg-yellow-50 border border-yellow-200 rounded">
+                                                <svg class="w-4 h-4 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                                </svg>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-xs text-yellow-600 font-medium">Pending</p>
+                                                    <p class="text-sm font-bold text-yellow-700">{{ classmate.progress.pending || 0 }}</p>
+                                                </div>
+                                            </div>
+
+                                            <!-- Not Submitted -->
+                                            <div class="flex items-center gap-2 p-2 bg-red-50 border border-red-200 rounded">
+                                                <svg class="w-4 h-4 text-red-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                                </svg>
+                                                <div class="flex-1 min-w-0">
+                                                    <p class="text-xs text-red-600 font-medium">Not Submitted</p>
+                                                    <p class="text-sm font-bold text-red-700">{{ Math.max(0, classmate.progress.not_submitted || 0) }}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Average Grade -->
+                                        <div v-if="classmate.progress.average_grade !== null" 
+                                             class="flex items-center justify-between p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-lg">
+                                            <div class="flex items-center gap-2">
+                                                <svg class="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                                                </svg>
+                                                <span class="text-sm font-semibold text-gray-700">Average Grade</span>
+                                            </div>
+                                            <span class="text-2xl font-bold text-green-700">{{ classmate.progress.average_grade }}</span>
+                                        </div>
+                                        <div v-else class="flex items-center justify-center p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                                            <svg class="w-4 h-4 text-gray-400 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5m16 0h-2.586a1 1 0 00-.707.293l-2.414 2.414a1 1 0 01-.707.293h-3.172a1 1 0 01-.707-.293l-2.414-2.414A1 1 0 006.586 13H4" />
+                                            </svg>
+                                            <span class="text-sm text-gray-500">No grades yet</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -779,28 +972,85 @@ const unsubmitWork = () => {
                                     </svg>
                                     My Gradebook
                                 </h3>
-                                <div class="flex items-center gap-2">
-                                    <button class="px-3 py-1.5 text-sm font-medium text-red-900 bg-red-50 rounded hover:bg-red-100 transition">
-                                        All
-                                    </button>
-                                    <button class="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded transition">
-                                        Graded
-                                    </button>
-                                    <button class="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded transition">
-                                        Missing
-                                    </button>
-                                    <button class="px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-100 rounded transition">
-                                        Submitted
-                                    </button>
+                            </div>
+                            <p class="text-sm text-gray-500 mb-4">All your graded work</p>
+                            
+                            <!-- Graded Submissions List -->
+                            <div v-if="completedClassworks && completedClassworks.length > 0" class="space-y-3">
+                                <div v-for="work in completedClassworks.filter(w => w.submission && w.submission.grade !== null)" :key="work.id"
+                                     class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
+                                    <div class="flex items-start justify-between">
+                                        <div class="flex-1">
+                                            <div class="flex items-center gap-2 mb-2">
+                                                <span class="px-2 py-1 text-xs font-medium rounded"
+                                                      :class="{
+                                                          'bg-blue-100 text-blue-800': work.type === 'assignment',
+                                                          'bg-green-100 text-green-800': work.type === 'activity',
+                                                          'bg-purple-100 text-purple-800': work.type === 'quiz',
+                                                          'bg-gray-100 text-gray-800': work.type === 'lesson'
+                                                      }">
+                                                    {{ work.type.charAt(0).toUpperCase() + work.type.slice(1) }}
+                                                </span>
+                                                <span v-if="work.submission.status === 'graded'" 
+                                                      class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
+                                                    Graded
+                                                </span>
+                                                <span v-if="work.submission.status === 'returned'" 
+                                                      class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                                                    Returned
+                                                </span>
+                                            </div>
+                                            <h4 class="font-semibold text-gray-900 mb-1">{{ work.title }}</h4>
+                                            <p v-if="work.due_date" class="text-xs text-gray-500">
+                                                Due: {{ work.due_date }}
+                                            </p>
+                                            <p v-if="work.submission.graded_at" class="text-xs text-gray-500">
+                                                Graded: {{ new Date(work.submission.graded_at).toLocaleDateString() }}
+                                            </p>
+                                        </div>
+                                        <div class="text-right">
+                                            <div class="text-2xl font-bold"
+                                                 :class="{
+                                                     'text-green-600': (work.submission.grade / work.points) >= 0.9,
+                                                     'text-blue-600': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
+                                                     'text-yellow-600': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
+                                                     'text-red-600': (work.submission.grade / work.points) < 0.6
+                                                 }">
+                                                {{ work.submission.grade }}/{{ work.points }}
+                                            </div>
+                                            <div class="text-sm text-gray-600">
+                                                {{ work.points > 0 ? Math.round((work.submission.grade / work.points) * 100) : 0 }}%
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Progress Bar -->
+                                    <div class="mt-3 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
+                                        <div class="h-2 rounded-full transition-all"
+                                             :class="{
+                                                 'bg-green-500': (work.submission.grade / work.points) >= 0.9,
+                                                 'bg-blue-500': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
+                                                 'bg-yellow-500': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
+                                                 'bg-red-500': (work.submission.grade / work.points) < 0.6
+                                             }"
+                                             :style="{ width: (work.points > 0 ? Math.min((work.submission.grade / work.points) * 100, 100) : 0) + '%' }">
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Feedback -->
+                                    <div v-if="work.submission.feedback" class="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
+                                        <p class="text-xs font-semibold text-blue-900 mb-1">Teacher Feedback:</p>
+                                        <p class="text-sm text-blue-800">{{ work.submission.feedback }}</p>
+                                    </div>
                                 </div>
                             </div>
-                            <p class="text-sm text-gray-500 mb-4">Organized by assignment type</p>
                             
-                            <div class="text-center py-8 text-gray-500">
+                            <!-- No Graded Work -->
+                            <div v-else class="text-center py-8 text-gray-500">
                                 <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
-                                <p class="mt-2">No assignments yet</p>
+                                <p class="mt-2">No graded assignments yet</p>
                             </div>
                         </div>
                     </div>

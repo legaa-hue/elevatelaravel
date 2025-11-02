@@ -1192,8 +1192,15 @@ const exportClassStandings = () => {
                                     class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
                                 >
                                     <div class="flex items-center gap-3">
-                                        <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold">
-                                            {{ teacher.name.charAt(0) }}
+                                        <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold overflow-hidden flex-shrink-0 relative">
+                                            <img v-if="teacher.profile_picture" 
+                                                 :src="teacher.profile_picture" 
+                                                 :alt="teacher.name"
+                                                 class="w-full h-full object-cover absolute inset-0"
+                                            />
+                                            <span v-if="!teacher.profile_picture" class="z-10">
+                                                {{ teacher.name.charAt(0) }}
+                                            </span>
                                         </div>
                                         <div>
                                             <p class="font-semibold text-gray-900">{{ teacher.name }}</p>
@@ -1235,8 +1242,15 @@ const exportClassStandings = () => {
                                 >
                                     <div class="flex items-start justify-between mb-3">
                                         <div class="flex items-center gap-3">
-                                            <div class="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-lg">
-                                                {{ student.name.charAt(0) }}
+                                            <div class="w-12 h-12 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-lg overflow-hidden flex-shrink-0 relative">
+                                                <img v-if="student.profile_picture" 
+                                                     :src="student.profile_picture" 
+                                                     :alt="student.name"
+                                                     class="w-full h-full object-cover absolute inset-0"
+                                                />
+                                                <span v-if="!student.profile_picture" class="z-10">
+                                                    {{ student.name.charAt(0) }}
+                                                </span>
                                             </div>
                                             <div>
                                                 <p class="font-semibold text-gray-900">{{ student.name }}</p>
@@ -1250,12 +1264,12 @@ const exportClassStandings = () => {
                                     <div class="space-y-2 mb-3">
                                         <div class="flex items-center justify-between text-xs">
                                             <span class="text-gray-600">Completion</span>
-                                            <span class="font-semibold text-gray-900">{{ student.progress.completion_rate }}%</span>
+                                            <span class="font-semibold text-gray-900">{{ Math.min(student.progress.completion_rate, 100) }}%</span>
                                         </div>
-                                        <div class="w-full bg-gray-200 rounded-full h-2">
+                                        <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                                             <div 
                                                 class="bg-blue-600 h-2 rounded-full transition-all" 
-                                                :style="{ width: student.progress.completion_rate + '%' }"
+                                                :style="{ width: Math.min(student.progress.completion_rate, 100) + '%' }"
                                             ></div>
                                         </div>
                                         <div class="flex items-center justify-between text-xs text-gray-600">
@@ -1971,8 +1985,15 @@ const exportClassStandings = () => {
                     <div class="bg-white px-4 pt-5 pb-4 sm:p-6">
                         <div class="flex items-start justify-between mb-6">
                             <div class="flex items-center gap-3">
-                                <div class="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-2xl">
-                                    {{ selectedStudent.name.charAt(0) }}
+                                <div class="w-16 h-16 bg-green-600 rounded-full flex items-center justify-center text-white font-bold text-2xl overflow-hidden flex-shrink-0 relative">
+                                    <img v-if="selectedStudent.profile_picture" 
+                                         :src="selectedStudent.profile_picture" 
+                                         :alt="selectedStudent.name"
+                                         class="w-full h-full object-cover absolute inset-0"
+                                    />
+                                    <span v-if="!selectedStudent.profile_picture" class="z-10">
+                                        {{ selectedStudent.name.charAt(0) }}
+                                    </span>
                                 </div>
                                 <div>
                                     <h3 class="text-2xl font-bold text-gray-900">{{ selectedStudent.name }}</h3>
@@ -1991,7 +2012,7 @@ const exportClassStandings = () => {
                         <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                             <div class="bg-blue-50 rounded-lg p-4">
                                 <div class="text-sm text-gray-600 mb-1">Completion Rate</div>
-                                <div class="text-3xl font-bold text-blue-600">{{ selectedStudent.progress.completion_rate }}%</div>
+                                <div class="text-3xl font-bold text-blue-600">{{ Math.min(selectedStudent.progress.completion_rate, 100) }}%</div>
                                 <div class="text-xs text-gray-500 mt-1">{{ selectedStudent.progress.submitted }}/{{ selectedStudent.progress.total_classwork }}</div>
                             </div>
                             <div class="bg-green-50 rounded-lg p-4">
@@ -2028,11 +2049,11 @@ const exportClassStandings = () => {
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="w-full bg-gray-200 rounded-full h-2">
+                                    <div class="w-full bg-gray-200 rounded-full h-2 overflow-hidden">
                                         <div 
                                             class="h-2 rounded-full transition-all"
                                             :class="submission.percentage >= 90 ? 'bg-green-500' : submission.percentage >= 75 ? 'bg-blue-500' : submission.percentage >= 60 ? 'bg-yellow-500' : 'bg-red-500'"
-                                            :style="{ width: submission.percentage + '%' }"
+                                            :style="{ width: Math.min(submission.percentage, 100) + '%' }"
                                         ></div>
                                     </div>
                                 </div>
@@ -2063,11 +2084,11 @@ const exportClassStandings = () => {
                                 </div>
                                 <div class="flex items-center justify-between">
                                     <span class="text-sm text-gray-700">Pending</span>
-                                    <span class="font-semibold text-yellow-600">{{ selectedStudent.progress.submitted - selectedStudent.progress.graded }}</span>
+                                    <span class="font-semibold text-yellow-600">{{ Math.max(0, selectedStudent.progress.submitted - selectedStudent.progress.graded) }}</span>
                                 </div>
                                 <div class="flex items-center justify-between pt-3 border-t border-gray-200">
                                     <span class="text-sm font-semibold text-gray-900">Not Submitted</span>
-                                    <span class="font-bold text-red-600">{{ selectedStudent.progress.total_classwork - selectedStudent.progress.submitted }}</span>
+                                    <span class="font-bold text-red-600">{{ Math.max(0, selectedStudent.progress.total_classwork - selectedStudent.progress.submitted) }}</span>
                                 </div>
                             </div>
                         </div>
