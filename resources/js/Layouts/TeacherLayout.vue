@@ -3,6 +3,9 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
+import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
 
 const page = usePage();
 const sidebarOpen = ref(false); // default collapsed; will be set on mount based on viewport
@@ -12,6 +15,8 @@ const joinedCoursesDropdownOpen = ref(false);
 const notificationDropdownOpen = ref(false);
 const showCreateCourseModal = ref(false);
 const showJoinCourseModal = ref(false);
+const showToast = ref(false);
+const toastMessage = ref('');
 const myCourses = ref([]);
 const joinedCourses = ref([]);
 const loadingCourses = ref(false);
@@ -26,6 +31,39 @@ const loadingNotifications = ref(false);
 
 const user = computed(() => page.props.auth.user);
 const activeAcademicYear = computed(() => page.props.activeAcademicYear);
+
+// Offline sync
+const { syncPendingActions } = useOfflineSync();
+
+const handleRetrySync = () => {
+    syncPendingActions();
+};
+
+// PWA Install Button (YouTube-style)
+const showInstallButton = ref(false);
+const deferredPrompt = ref(null);
+
+const handleInstallClick = async () => {
+    if (!deferredPrompt.value) {
+        console.log('⚠️ PWA: Install prompt not available yet');
+        console.log('💡 TIP: Use Chrome address bar install icon (⊕) or Chrome menu → Install ElevateGS');
+        alert('Install ElevateGS App:\n\n1. Look for ⊕ icon in Chrome address bar (top-right)\n2. Or: Chrome menu (⋮) → Install ElevateGS\n3. Or: DevTools → Application → Manifest → Install\n\nThe app will work offline once installed!');
+        return;
+    }
+    
+    console.log('🚀 PWA: Showing install prompt');
+    deferredPrompt.value.prompt();
+    const { outcome } = await deferredPrompt.value.userChoice;
+    
+    if (outcome === 'accepted') {
+        console.log('✅ PWA: User accepted the install prompt');
+    } else {
+        console.log('❌ PWA: User dismissed the install prompt');
+    }
+    
+    deferredPrompt.value = null;
+    showInstallButton.value = false;
+};
 
 // Navigation items
         const navigation = [
@@ -380,6 +418,12 @@ const timeAgo = (date) => {
     return Math.floor(seconds) + ' seconds ago';
 };
 
+// Toast notification functions
+const hideToast = () => {
+    showToast.value = false;
+    toastMessage.value = '';
+};
+
 // Poll for new notifications every 30 seconds
 let notificationInterval;
 
@@ -400,6 +444,30 @@ onMounted(() => {
     notificationInterval = setInterval(() => {
         loadUnreadCount();
     }, 30000);
+    
+    // PWA Install Button (YouTube-style)
+    console.log('🎯 PWA: Setting up install button listeners');
+    
+    // Check if already in standalone mode (already installed)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+        console.log('✅ PWA: App already installed (standalone mode)');
+        showInstallButton.value = false;
+    }
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('🚀 PWA: beforeinstallprompt event fired!');
+        e.preventDefault();
+        deferredPrompt.value = e;
+        showInstallButton.value = true;
+        console.log('✅ PWA: Install button should now be visible');
+    });
+    
+    // Hide install button if app is already installed
+    window.addEventListener('appinstalled', () => {
+        console.log('🎉 PWA: App installed successfully!');
+        showInstallButton.value = false;
+        deferredPrompt.value = null;
+    });
 });
 
 onUnmounted(() => {
@@ -410,7 +478,13 @@ onUnmounted(() => {
 </script>
 
 <template>
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
+    
     <div class="min-h-screen bg-gray-50">
+        <!-- Offline Sync Indicator -->
+        <OfflineSyncIndicator @retry-sync="handleRetrySync" />
+        
         <!-- Toast Notification -->
         <transition name="fade">
             <div v-if="showToast" class="fixed top-6 right-6 z-[9999] bg-green-600 text-white px-6 py-3 rounded shadow-lg flex items-center gap-3 animate-fade-in">
@@ -668,6 +742,19 @@ onUnmounted(() => {
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
                             </svg>
+                        </button>
+
+                        <!-- Install App Button (YouTube-style) -->
+                        <!-- Always visible for easy access to installation options -->
+                        <button
+                            @click="handleInstallClick"
+                            class="flex items-center gap-2 px-3 py-2 bg-white border-2 border-red-900 text-red-900 hover:bg-red-50 rounded-lg font-medium transition shadow-sm"
+                            title="Install ElevateGS App"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span class="hidden md:inline font-semibold">Install</span>
                         </button>
 
                         <!-- Notification Icon -->

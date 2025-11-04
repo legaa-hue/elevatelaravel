@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
 
 const sidebarOpen = ref(true);
 const showProfileDropdown = ref(false);
@@ -9,6 +10,32 @@ const page = usePage();
 
 // Get pending courses count from shared props
 const pendingCoursesCount = computed(() => page.props.pendingCoursesCount || 0);
+
+// PWA Install Button (YouTube-style)
+const showInstallButton = ref(false);
+const deferredPrompt = ref(null);
+
+const handleInstallClick = async () => {
+    if (!deferredPrompt.value) {
+        console.log('⚠️ PWA: Install prompt not available yet');
+        console.log('💡 TIP: Use Chrome address bar install icon (⊕) or Chrome menu → Install ElevateGS');
+        alert('Install option:\n\n1. Look for ⊕ icon in Chrome address bar (top-right)\n2. Or go to Chrome menu (⋮) → Install ElevateGS\n3. Or use DevTools → Application → Manifest → Install');
+        return;
+    }
+    
+    console.log('🚀 PWA: Showing install prompt');
+    deferredPrompt.value.prompt();
+    const { outcome } = await deferredPrompt.value.userChoice;
+    
+    if (outcome === 'accepted') {
+        console.log('✅ PWA: User accepted the install prompt');
+    } else {
+        console.log('❌ PWA: User dismissed the install prompt');
+    }
+    
+    deferredPrompt.value = null;
+    showInstallButton.value = false;
+};
 
 // Load sidebar state from localStorage or default to open
 onMounted(() => {
@@ -19,6 +46,30 @@ onMounted(() => {
         // Default to open on desktop, closed on mobile
         sidebarOpen.value = window.innerWidth >= 768;
     }
+    
+    // PWA Install Button (YouTube-style)
+    console.log('🎯 PWA: Setting up install button listeners');
+    
+    // Check if already in standalone mode (already installed)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+        console.log('✅ PWA: App already installed (standalone mode)');
+        showInstallButton.value = false;
+    }
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('🚀 PWA: beforeinstallprompt event fired!');
+        e.preventDefault();
+        deferredPrompt.value = e;
+        showInstallButton.value = true;
+        console.log('✅ PWA: Install button should now be visible');
+    });
+    
+    // Hide install button if app is already installed
+    window.addEventListener('appinstalled', () => {
+        console.log('🎉 PWA: App installed successfully!');
+        showInstallButton.value = false;
+        deferredPrompt.value = null;
+    });
 });
 
 const toggleSidebar = () => {
@@ -105,6 +156,9 @@ const isCurrentRoute = (routeName) => {
 </script>
 
 <template>
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
+    
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile overlay when sidebar open -->
         <div v-if="sidebarOpen" @click="toggleSidebar" class="fixed inset-0 z-30 bg-black bg-opacity-40 lg:hidden"></div>
@@ -215,7 +269,19 @@ const isCurrentRoute = (routeName) => {
                 </div>
                 
                 <div class="flex items-center space-x-4">
-                    <!-- Notifications -->
+                        <!-- Install App Button (YouTube-style) -->
+                        <!-- Shows when browser triggers beforeinstallprompt OR for testing -->
+                        <button
+                            v-if="showInstallButton || true"
+                            @click="handleInstallClick"
+                            class="flex items-center gap-2 px-3 py-2 bg-white border-2 border-red-900 text-red-900 hover:bg-red-50 rounded-lg font-medium transition shadow-sm"
+                            title="Install ElevateGS App"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span class="hidden md:inline font-semibold">Install</span>
+                        </button>                    <!-- Notifications -->
                     <Link
                         :href="route('admin.courses.index')"
                         class="p-2 rounded-lg hover:bg-gray-100 relative transition-colors"

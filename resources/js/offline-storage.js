@@ -2,7 +2,7 @@
 class OfflineStorage {
     constructor() {
         this.dbName = 'ElevateGS_Offline';
-        this.version = 1;
+        this.version = 2; // Upgraded to support teacher offline features
         this.db = null;
     }
 
@@ -44,8 +44,43 @@ class OfflineStorage {
                     gradesStore.createIndex('course_id', 'course_id', { unique: false });
                 }
 
+                if (!db.objectStoreNames.contains('gradebooks')) {
+                    const gradebooksStore = db.createObjectStore('gradebooks', { keyPath: 'course_id' });
+                    gradebooksStore.createIndex('updated_at', 'updated_at', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('events')) {
+                    const eventsStore = db.createObjectStore('events', { keyPath: 'id' });
+                    eventsStore.createIndex('user_id', 'user_id', { unique: false });
+                    eventsStore.createIndex('date', 'date', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('students')) {
+                    const studentsStore = db.createObjectStore('students', { keyPath: 'id' });
+                    studentsStore.createIndex('course_id', 'course_id', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('reports')) {
+                    const reportsStore = db.createObjectStore('reports', { keyPath: 'id' });
+                    reportsStore.createIndex('type', 'type', { unique: false });
+                    reportsStore.createIndex('cached_at', 'cached_at', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('materials')) {
+                    const materialsStore = db.createObjectStore('materials', { keyPath: 'id' });
+                    materialsStore.createIndex('course_id', 'course_id', { unique: false });
+                }
+
+                if (!db.objectStoreNames.contains('fileCache')) {
+                    const fileCacheStore = db.createObjectStore('fileCache', { keyPath: 'url' });
+                    fileCacheStore.createIndex('cached_at', 'cached_at', { unique: false });
+                    fileCacheStore.createIndex('course_id', 'course_id', { unique: false });
+                }
+
                 if (!db.objectStoreNames.contains('pendingActions')) {
-                    db.createObjectStore('pendingActions', { keyPath: 'id', autoIncrement: true });
+                    const pendingStore = db.createObjectStore('pendingActions', { keyPath: 'id', autoIncrement: true });
+                    pendingStore.createIndex('type', 'type', { unique: false });
+                    pendingStore.createIndex('timestamp', 'timestamp', { unique: false });
                 }
 
                 if (!db.objectStoreNames.contains('user')) {
@@ -56,6 +91,11 @@ class OfflineStorage {
                     const notificationsStore = db.createObjectStore('notifications', { keyPath: 'id' });
                     notificationsStore.createIndex('created_at', 'created_at', { unique: false });
                 }
+
+                if (!db.objectStoreNames.contains('dashboardCache')) {
+                    const dashboardStore = db.createObjectStore('dashboardCache', { keyPath: 'key' });
+                    dashboardStore.createIndex('cached_at', 'cached_at', { unique: false });
+                }
             };
         });
     }
@@ -63,10 +103,13 @@ class OfflineStorage {
     async save(storeName, data) {
         if (!this.db) await this.init();
         
+        // Clone data to remove non-serializable properties (functions, Promises, etc.)
+        const clonedData = JSON.parse(JSON.stringify(data));
+        
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
-            const request = store.put(data);
+            const request = store.put(clonedData);
 
             request.onsuccess = () => resolve(request.result);
             request.onerror = () => reject(request.error);
@@ -76,11 +119,14 @@ class OfflineStorage {
     async saveMany(storeName, items) {
         if (!this.db) await this.init();
         
+        // Clone items to remove non-serializable properties
+        const clonedItems = JSON.parse(JSON.stringify(items));
+        
         return new Promise((resolve, reject) => {
             const transaction = this.db.transaction([storeName], 'readwrite');
             const store = transaction.objectStore(storeName);
             
-            items.forEach(item => store.put(item));
+            clonedItems.forEach(item => store.put(item));
 
             transaction.oncomplete = () => resolve(true);
             transaction.onerror = () => reject(transaction.error);

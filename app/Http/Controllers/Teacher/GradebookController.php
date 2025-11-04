@@ -40,17 +40,6 @@ class GradebookController extends Controller
             abort(403, 'Unauthorized. Teacher or Admin access only.');
         }
 
-        // Get enrolled students with role filter
-        $students = $course->students()
-            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
-            ->orderBy('users.last_name')
-            ->orderBy('users.first_name')
-            ->get()
-            ->map(function($student) {
-                $student->name = $student->first_name . ' ' . $student->last_name;
-                return $student;
-            });
-
         // Get all classworks for this course
         $classworks = $course->classworks()
             ->whereIn('type', ['assignment', 'quiz', 'activity'])
@@ -58,18 +47,30 @@ class GradebookController extends Controller
             ->orderBy('created_at')
             ->get(['id', 'title', 'type', 'points', 'grading_period', 'grade_table_name', 'grade_main_column', 'grade_sub_column']);
 
-        // Get all graded submissions to populate grades
-        $submissions = \App\Models\ClassworkSubmission::whereIn('classwork_id', $classworks->pluck('id'))
-            ->whereIn('status', ['graded', 'returned'])
-            ->whereNotNull('grade')
-            ->get(['id', 'classwork_id', 'student_id', 'grade']);
+        // Get enrolled students with role filter and their submissions
+        $students = $course->students()
+            ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
+            ->orderBy('users.last_name')
+            ->orderBy('users.first_name')
+            ->get()
+            ->map(function($student) use ($classworks) {
+                $student->name = $student->first_name . ' ' . $student->last_name;
+                
+                // Load graded submissions for this student
+                $student->submissions = \App\Models\ClassworkSubmission::whereIn('classwork_id', $classworks->pluck('id'))
+                    ->where('student_id', $student->id)
+                    ->whereIn('status', ['graded', 'returned'])
+                    ->whereNotNull('grade')
+                    ->get(['id', 'classwork_id', 'student_id', 'grade', 'status']);
+                
+                return $student;
+            });
 
         // Include saved gradebook (structure + saved grades) if exists
         return Inertia::render('Teacher/Gradebook', [
             'course' => $course,
             'students' => $students,
             'classworks' => $classworks,
-            'submissions' => $submissions,
             'gradebook' => $course->gradebook ?? null,
         ]);
     }
@@ -128,9 +129,11 @@ class GradebookController extends Controller
             'midterm' => 'nullable|array',
             'midterm.tables' => 'nullable|array',
             'midterm.grades' => 'nullable|array',
+            'midterm.periodGrades' => 'nullable|array',
             'finals' => 'nullable|array',
             'finals.tables' => 'nullable|array',
             'finals.grades' => 'nullable|array',
+            'finals.periodGrades' => 'nullable|array',
         ]);
 
         // Filter out auto-populated grades (server-side defense)
@@ -186,14 +189,16 @@ class GradebookController extends Controller
                 'grades' => $filterAuto(
                     $validated['midterm']['grades'] ?? [],
                     $validated['midterm']['tables'] ?? []
-                )
+                ),
+                'periodGrades' => $validated['midterm']['periodGrades'] ?? []
             ],
             'finals' => [
                 'tables' => $validated['finals']['tables'] ?? [],
                 'grades' => $filterAuto(
                     $validated['finals']['grades'] ?? [],
                     $validated['finals']['tables'] ?? []
-                )
+                ),
+                'periodGrades' => $validated['finals']['periodGrades'] ?? []
             ]
         ];
 

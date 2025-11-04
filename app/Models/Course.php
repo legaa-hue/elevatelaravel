@@ -29,7 +29,7 @@ class Course extends Model
     ];
 
     protected $attributes = [
-        'status' => 'Pending', // Default status is Pending until admin approves
+        'status' => 'Active', // Courses are automatically active (admin approval disabled)
     ];
 
     protected static function boot()

@@ -29,7 +29,7 @@ GOOGLE_REDIRECT_URI=https://yourdomain.com/auth/google/callback
 deploy.bat   # Windows
 
 # 4. Install SSL
-sudo certbot --apache -d yourdomain.com     
+sudo certbot --apache -d yourdomain.com
 
 # 5. Done! Visit your site
 ```

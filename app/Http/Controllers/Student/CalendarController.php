@@ -13,10 +13,24 @@ class CalendarController extends Controller
     {
         $user = auth()->user();
         
-        // Get events that are for students or both (including due dates)
-        $events = Event::where(function($query) {
-                $query->where('target_audience', 'students')
-                    ->orWhere('target_audience', 'both');
+        // Get the IDs of courses the student is enrolled in
+        $enrolledCourseIds = $user->joinedCourses()
+            ->where('role', 'Student')
+            ->pluck('course_id')
+            ->toArray();
+        
+        // Get events that are for students or both
+        $events = Event::where(function($query) use ($enrolledCourseIds) {
+                $query->where(function($q) {
+                    // Global announcements (no specific course)
+                    $q->where('target_audience', 'students')
+                      ->orWhere('target_audience', 'both');
+                })
+                ->where(function($q) use ($enrolledCourseIds) {
+                    // Either no course specified (global) OR in a course the student is enrolled in
+                    $q->whereNull('course_id')
+                      ->orWhereIn('course_id', $enrolledCourseIds);
+                });
             })
             ->with('user')
             ->orderBy('date', 'asc')

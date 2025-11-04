@@ -33,6 +33,7 @@ class CourseViewController extends Controller
         $course->load([
             'teacher',
             'academicYear',
+            'program',
             'students' => function ($query) {
                 $query->orderBy('first_name');
             },
@@ -119,6 +120,10 @@ class CourseViewController extends Controller
                     'id' => $course->academicYear->id,
                     'year_name' => $course->academicYear->year_name,
                 ] : null,
+                'program' => $course->program ? [
+                    'id' => $course->program->id,
+                    'name' => $course->program->name,
+                ] : null,
                 'is_owner' => $isOwner,
                 'students_count' => $course->students_count,
                 'students' => $course->students->map(function ($student) use ($course, $classwork) {
@@ -130,8 +135,8 @@ class CourseViewController extends Controller
                         ->where('status', '!=', 'draft')
                         ->get();
                     
-                    // Calculate progress
-                    $totalClasswork = $classwork->where('has_submission', true)->count();
+                    // Calculate progress - count all classwork except materials/lessons
+                    $totalClasswork = $classwork->whereNotIn('type', ['material', 'lesson'])->count();
                     // Count unique classwork items that have been submitted (not draft status)
                     $submittedCount = $submissions->where('status', '!=', 'draft')->pluck('classwork_id')->unique()->count();
                     $gradedCount = $submissions->whereIn('status', ['graded', 'returned'])->pluck('classwork_id')->unique()->count();
@@ -168,6 +173,7 @@ class CourseViewController extends Controller
                         'name' => $student->first_name . ' ' . $student->last_name,
                         'email' => $student->email,
                         'profile_picture' => $student->profile_picture,
+                        'program' => $course->program ? $course->program->name : 'N/A',
                         'joined_at' => $pivot ? $pivot->created_at->format('M d, Y') : null,
                         'progress' => [
                             'total_classwork' => $totalClasswork,

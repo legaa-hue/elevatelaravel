@@ -6,10 +6,16 @@ import InfoTooltip from '@/Components/InfoTooltip.vue';
 import { ref, watch, computed, onMounted } from 'vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
 
 const props = defineProps({
   courses: Array,
 });
+
+// Offline composables
+const { isOnline } = useOfflineSync();
+const { cacheReports, getCachedReports } = useTeacherOffline();
 
 const selectedCourseId = ref('');
 const dateFrom = ref('');
@@ -17,6 +23,7 @@ const dateTo = ref('');
 
 const loading = ref(false);
 const errorMsg = ref('');
+const isFromCache = ref(false);
 
 const overview = ref(null);
 const distribution = ref([]);
@@ -27,7 +34,23 @@ const selectedCourse = computed(() => props.courses?.find(c => c.id == selectedC
 
 const fetchData = async () => {
   if (!selectedCourseId.value) return;
-  loading.value = true; errorMsg.value = '';
+  
+  // Try to load from cache if offline
+  if (!isOnline.value) {
+    const cached = await getCachedReports(selectedCourseId.value);
+    if (cached) {
+      overview.value = cached.overview;
+      distribution.value = cached.distribution || [];
+      students.value = cached.students || [];
+      insights.value = cached.insights || {};
+      isFromCache.value = true;
+      return;
+    }
+    errorMsg.value = '⚠️ Report not available offline. Please connect to internet.';
+    return;
+  }
+  
+  loading.value = true; errorMsg.value = ''; isFromCache.value = false;
   try {
     const res = await axios.get('/teacher/reports/data', {
       params: {
@@ -40,6 +63,14 @@ const fetchData = async () => {
     distribution.value = res.data.distribution || [];
     students.value = res.data.students || [];
     insights.value = res.data.insights || {};
+    
+    // Cache for offline use
+    await cacheReports(selectedCourseId.value, {
+      overview: overview.value,
+      distribution: distribution.value,
+      students: students.value,
+      insights: insights.value
+    });
   } catch (e) {
     console.error(e);
     errorMsg.value = e.response?.data?.message || e.message;
@@ -97,6 +128,19 @@ const exportReport = async (format) => {
   <TeacherLayout>
     <Head title="Reports" />
     <div class="space-y-6">
+    <!-- Cache Indicator -->
+    <div 
+      v-if="isFromCache"
+      class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md"
+    >
+      <div class="flex items-center">
+        <svg class="w-6 h-6 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+        <p class="text-yellow-800 font-medium">📈 Viewing Cached Report (Offline Mode)</p>
+      </div>
+    </div>
+    
     <!-- Header / Filters -->
     <div class="bg-white rounded-lg shadow p-6 flex flex-col md:flex-row gap-6 items-center justify-between border border-gray-100">
       <div class="flex items-center gap-3 w-full md:w-auto">

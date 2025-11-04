@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>ElevateGS PWA Icon Generator</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #7f1d1d;
+        }
+        .icons-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        .icon-card {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            text-align: center;
+        }
+        .icon-card h3 {
+            margin: 10px 0;
+            color: #333;
+        }
+        canvas {
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background: #7f1d1d;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        button:hover {
+            background: #991b1b;
+        }
+        .instructions {
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .instructions ol {
+            line-height: 1.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📱 ElevateGS PWA Icon Generator</h1>
+        
+        <div class="instructions">
+            <h2>📋 Instructions:</h2>
+            <ol>
+                <li>Click each "Download" button to save the icons</li>
+                <li>Icons will be saved with correct filenames</li>
+                <li>All icons use ElevateGS maroon theme (#7f1d1d)</li>
+                <li>Maskable icon has safe zone for adaptive icons</li>
+            </ol>
+        </div>
+
+        <div class="icons-grid">
+            <div class="icon-card">
+                <h3>64x64 (Small)</h3>
+                <canvas id="icon64" width="64" height="64"></canvas>
+                <br>
+                <button onclick="downloadIcon('icon64', 'pwa-64x64.png')">Download</button>
+            </div>
+
+            <div class="icon-card">
+                <h3>192x192 (Standard)</h3>
+                <canvas id="icon192" width="192" height="192"></canvas>
+                <br>
+                <button onclick="downloadIcon('icon192', 'pwa-192x192.png')">Download</button>
+            </div>
+
+            <div class="icon-card">
+                <h3>512x512 (Large)</h3>
+                <canvas id="icon512" width="512" height="512"></canvas>
+                <br>
+                <button onclick="downloadIcon('icon512', 'pwa-512x512.png')">Download</button>
+            </div>
+
+            <div class="icon-card">
+                <h3>512x512 (Maskable)</h3>
+                <canvas id="iconMaskable" width="512" height="512"></canvas>
+                <br>
+                <button onclick="downloadIcon('iconMaskable', 'pwa-maskable-512x512.png')">Download</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ElevateGS Brand Colors
+        const MAROON = '#7f1d1d';
+        const MAROON_LIGHT = '#991b1b';
+        const MAROON_DARK = '#5f1616';
+        const WHITE = '#ffffff';
+        const GOLD = '#fbbf24';
+
+        // Draw icon with EGS text
+        function drawIcon(canvasId, size, isMaskable = false) {
+            const canvas = document.getElementById(canvasId);
+            const ctx = canvas.getContext('2d');
+            
+            // Clear canvas
+            ctx.clearRect(0, 0, size, size);
+            
+            // Calculate dimensions
+            const padding = isMaskable ? size * 0.1 : 0;
+            const safeSize = size - (padding * 2);
+            const centerX = size / 2;
+            const centerY = size / 2;
+            
+            // Background - Gradient
+            const gradient = ctx.createLinearGradient(0, 0, size, size);
+            gradient.addColorStop(0, MAROON);
+            gradient.addColorStop(1, MAROON_DARK);
+            
+            if (isMaskable) {
+                // Full bleed background for maskable
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, size, size);
+            } else {
+                // Rounded square for regular icons
+                const radius = size * 0.15;
+                ctx.fillStyle = gradient;
+                roundRect(ctx, 0, 0, size, size, radius);
+                ctx.fill();
+            }
+            
+            // Add subtle shadow effect
+            const shadowGradient = ctx.createRadialGradient(centerX, centerY * 0.4, 0, centerX, centerY, size * 0.7);
+            shadowGradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+            shadowGradient.addColorStop(1, 'rgba(0, 0, 0, 0.2)');
+            ctx.fillStyle = shadowGradient;
+            ctx.fillRect(0, 0, size, size);
+            
+            // EGS Text
+            ctx.fillStyle = WHITE;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
+            // Font size based on canvas size
+            const fontSize = isMaskable ? safeSize * 0.35 : size * 0.4;
+            ctx.font = `bold ${fontSize}px Arial, sans-serif`;
+            
+            // Draw "EGS"
+            ctx.fillText('EGS', centerX, centerY - (fontSize * 0.05));
+            
+            // Draw underline accent
+            const underlineY = centerY + (fontSize * 0.4);
+            const underlineWidth = fontSize * 1.2;
+            ctx.fillStyle = GOLD;
+            ctx.fillRect(centerX - underlineWidth / 2, underlineY, underlineWidth, fontSize * 0.08);
+            
+            // Small "ELEVATE" text for larger icons
+            if (size >= 192) {
+                ctx.fillStyle = WHITE;
+                const smallFontSize = size * 0.08;
+                ctx.font = `${smallFontSize}px Arial, sans-serif`;
+                ctx.fillText('ELEVATE', centerX, centerY + (fontSize * 0.6));
+            }
+        }
+        
+        // Helper function to draw rounded rectangle
+        function roundRect(ctx, x, y, width, height, radius) {
+            ctx.beginPath();
+            ctx.moveTo(x + radius, y);
+            ctx.lineTo(x + width - radius, y);
+            ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+            ctx.lineTo(x + width, y + height - radius);
+            ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+            ctx.lineTo(x + radius, y + height);
+            ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+            ctx.lineTo(x, y + radius);
+            ctx.quadraticCurveTo(x, y, x + radius, y);
+            ctx.closePath();
+        }
+        
+        // Download icon
+        function downloadIcon(canvasId, filename) {
+            const canvas = document.getElementById(canvasId);
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL('image/png');
+            link.click();
+        }
+        
+        // Generate all icons on load
+        window.onload = function() {
+            drawIcon('icon64', 64);
+            drawIcon('icon192', 192);
+            drawIcon('icon512', 512);
+            drawIcon('iconMaskable', 512, true);
+        };
+    </script>
+</body>
+</html>

@@ -1,7 +1,9 @@
 <script setup>
 import { Head, usePage } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
+import { useOfflineSync } from '@/composables/useOfflineSync';
 
 const page = usePage();
 
@@ -24,6 +26,38 @@ const props = defineProps({
 });
 
 const user = computed(() => page.props.auth.user);
+
+// Offline support
+const { isOnline } = useOfflineSync();
+const { cacheDashboardData, getCachedDashboard } = useTeacherOffline();
+
+const dashboardData = ref({
+    stats: props.stats,
+    recentCourses: props.recentCourses,
+    upcomingEvents: props.upcomingEvents,
+    recentAnnouncements: props.recentAnnouncements
+});
+const isFromCache = ref(false);
+
+onMounted(async () => {
+    if (isOnline.value && props.stats) {
+        // Cache current data when online
+        await cacheDashboardData({
+            stats: props.stats,
+            recentCourses: props.recentCourses,
+            upcomingEvents: props.upcomingEvents,
+            recentAnnouncements: props.recentAnnouncements,
+            cached_at: Date.now()
+        });
+    } else if (!isOnline.value) {
+        // Load from cache when offline
+        const cached = await getCachedDashboard();
+        if (cached) {
+            dashboardData.value = cached;
+            isFromCache.value = true;
+        }
+    }
+});
 
 // Get greeting based on time
 const greeting = computed(() => {
@@ -55,6 +89,17 @@ const formatTime = (timeString) => {
 
     <TeacherLayout>
         <div class="space-y-6">
+            <!-- Offline Data Indicator -->
+            <div v-if="isFromCache" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-r-lg shadow-sm">
+                <div class="flex items-center">
+                    <span class="material-icons text-yellow-600 mr-3">cloud_off</span>
+                    <div>
+                        <p class="text-sm font-semibold text-yellow-800">Viewing Cached Data</p>
+                        <p class="text-xs text-yellow-700 mt-1">You're offline. Connect to internet for latest updates.</p>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Welcome Banner -->
             <div class="bg-gradient-to-r from-red-900 to-red-700 rounded-lg shadow-lg p-6 md:p-8 text-white">
                 <h1 class="text-2xl md:text-3xl font-bold">Welcome back, {{ user.first_name }} {{ user.last_name }}! 👋</h1>
@@ -67,7 +112,7 @@ const formatTime = (timeString) => {
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-sm font-medium text-gray-600">My Courses</p>
-                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ stats.myCourses }}</p>
+                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ dashboardData.stats?.myCourses || 0 }}</p>
                         </div>
                         <div class="w-12 h-12 bg-blue-50 rounded-lg flex items-center justify-center">
                             <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -81,7 +126,7 @@ const formatTime = (timeString) => {
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-sm font-medium text-gray-600">Joined Courses</p>
-                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ stats.joinedCourses }}</p>
+                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ dashboardData.stats?.joinedCourses || 0 }}</p>
                         </div>
                         <div class="w-12 h-12 bg-green-50 rounded-lg flex items-center justify-center">
                             <svg class="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -109,7 +154,7 @@ const formatTime = (timeString) => {
                     <div class="flex items-center justify-between">
                         <div>
                             <p class="text-sm font-medium text-gray-600">Upcoming Events</p>
-                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ stats.upcomingEvents }}</p>
+                            <p class="text-3xl font-bold text-gray-900 mt-2">{{ dashboardData.stats?.upcomingEvents || 0 }}</p>
                         </div>
                         <div class="w-12 h-12 bg-purple-50 rounded-lg flex items-center justify-center">
                             <svg class="w-6 h-6 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -127,9 +172,9 @@ const formatTime = (timeString) => {
                         <h2 class="text-xl font-bold text-gray-900">Recent Courses</h2>
                     </div>
 
-                    <div v-if="recentCourses.length > 0" class="space-y-4">
+                    <div v-if="dashboardData.recentCourses && dashboardData.recentCourses.length > 0" class="space-y-4">
                         <div
-                            v-for="course in recentCourses"
+                            v-for="course in dashboardData.recentCourses"
                             :key="course.id"
                             class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition"
                         >
@@ -200,9 +245,9 @@ const formatTime = (timeString) => {
                             <a href="/teacher/calendar" class="text-sm text-red-900 hover:text-red-700 font-medium">View All →</a>
                         </div>
 
-                        <div v-if="upcomingEvents.length > 0" class="space-y-3">
+                        <div v-if="dashboardData.upcomingEvents && dashboardData.upcomingEvents.length > 0" class="space-y-3">
                             <div
-                                v-for="event in upcomingEvents"
+                                v-for="event in dashboardData.upcomingEvents"
                                 :key="event.id"
                                 class="border-l-4 border-red-900 pl-3 py-2"
                             >
@@ -224,9 +269,9 @@ const formatTime = (timeString) => {
                     <div class="bg-white rounded-lg shadow-md p-6">
                         <h2 class="text-xl font-bold text-gray-900 mb-4">Announcements</h2>
 
-                        <div v-if="recentAnnouncements.length > 0" class="space-y-3">
+                        <div v-if="dashboardData.recentAnnouncements && dashboardData.recentAnnouncements.length > 0" class="space-y-3">
                             <div
-                                v-for="announcement in recentAnnouncements"
+                                v-for="announcement in dashboardData.recentAnnouncements"
                                 :key="announcement.id"
                                 class="border border-gray-200 rounded-lg p-3"
                             >

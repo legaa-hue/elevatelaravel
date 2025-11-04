@@ -64,13 +64,22 @@ class ProfileController extends Controller
 
         // Update other fields
         $user->first_name = $validated['first_name'];
-        $user->middle_initial = $validated['middle_initial'];
+        $user->middle_initial = $validated['middle_initial'] ?? null;
         $user->last_name = $validated['last_name'];
         
         // Update the name field (full name)
         $user->name = trim($validated['first_name'] . ' ' . 
                           ($validated['middle_initial'] ? $validated['middle_initial'] . '. ' : '') . 
                           $validated['last_name']);
+
+        // Debug: Log the values
+        \Log::info('Saving user profile', [
+            'user_id' => $user->id,
+            'first_name' => $user->first_name,
+            'middle_initial' => $user->middle_initial,
+            'last_name' => $user->last_name,
+            'name' => $user->name
+        ]);
 
         $user->save();
 

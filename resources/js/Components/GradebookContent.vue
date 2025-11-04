@@ -10,6 +10,8 @@ const props = defineProps({
     gradebook: Object,
 });
 
+const emit = defineEmits(['gradebook-updated']);
+
 const midtermPercentage = ref(50);
 const finalsPercentage = ref(50);
 const showMidtermSection = ref(true);
@@ -476,16 +478,29 @@ const populateGradesFromSubmissions = async () => {
         props.students.forEach(student => {
             if (!student.submissions || !Array.isArray(student.submissions)) return;
             
-            // Filter to graded/returned submissions only
+            console.log(`[populateGradesFromSubmissions] Processing student ${student.name}, total submissions: ${student.submissions.length}`);
+            
+            // Filter to submissions with grades (don't check status field if it doesn't exist)
             const gradedSubmissions = student.submissions.filter(sub => 
-                ['graded', 'returned'].includes(sub.status) && sub.grade !== null && sub.grade !== undefined
+                sub.grade !== null && sub.grade !== undefined
             );
+            
+            console.log(`[populateGradesFromSubmissions] Student ${student.name} graded submissions: ${gradedSubmissions.length}`);
             
             gradedSubmissions.forEach(submission => {
                 const classwork = props.classworks.find(cw => cw.id === submission.classwork_id);
                 
+                console.log(`[populateGradesFromSubmissions] Submission ${submission.id} for classwork ${submission.classwork_id}:`, {
+                    found: !!classwork,
+                    has_grading_period: classwork?.grading_period,
+                    has_table_name: classwork?.grade_table_name,
+                    has_main_column: classwork?.grade_main_column,
+                    grade: submission.grade
+                });
+                
                 if (!classwork || !classwork.grading_period || !classwork.grade_table_name || 
                     !classwork.grade_main_column) {
+                    console.warn(`[populateGradesFromSubmissions] Skipping submission ${submission.id} - classwork not linked to gradebook`);
                     return; // Skip if classwork is not linked to gradebook
                 }
                 
@@ -599,11 +614,13 @@ const toggleSection = (period) => {
         showMidtermSection.value = !showMidtermSection.value;
         if (showMidtermSection.value) {
             showFinalsSection.value = false;
+            sessionStorage.setItem(`gradebook_section_${props.course.id}`, 'midterm');
         }
     } else {
         showFinalsSection.value = !showFinalsSection.value;
         if (showFinalsSection.value) {
             showMidtermSection.value = false;
+            sessionStorage.setItem(`gradebook_section_${props.course.id}`, 'finals');
         }
     }
 };
@@ -1088,23 +1105,49 @@ const saveGradebook = async () => {
             finalsTables.value
         );
         
+        console.log('[Gradebook] Finals grades being saved:', JSON.stringify(finalsGradesFiltered, null, 2));
+        
+        // Calculate period totals for each student
+        const calculatePeriodTotals = (period) => {
+            const totals = {};
+            Object.keys(studentGrades.value).forEach(studentId => {
+                totals[studentId] = calculateStudentPeriodGrade(studentId, period);
+            });
+            console.log(`[Gradebook] Calculated ${period} period totals:`, totals);
+            return totals;
+        };
+        
+        const midtermPeriodGrades = calculatePeriodTotals('midterm');
+        const finalsPeriodGrades = calculatePeriodTotals('finals');
+        
         const data = {
             midtermPercentage: midtermPercentage.value,
             finalsPercentage: finalsPercentage.value,
             midterm: {
                 tables: Object.values(midtermTables.value),
-                grades: midtermGradesFiltered
+                grades: midtermGradesFiltered,
+                periodGrades: midtermPeriodGrades
             },
             finals: {
                 tables: Object.values(finalsTables.value),
-                grades: finalsGradesFiltered
+                grades: finalsGradesFiltered,
+                periodGrades: finalsPeriodGrades
             }
         };
+        
+        console.log('[Gradebook] Saving data with periodGrades:', {
+            midterm: midtermPeriodGrades,
+            finals: finalsPeriodGrades
+        });
         
         // Save to backend only (no localStorage)
         console.log('[Gradebook] Saving gradebook to database (manual grades only)');
         const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
         console.log('[Gradebook] Gradebook saved successfully:', response.data);
+        
+        // Emit the updated gradebook so parent component can update its reactive ref
+        emit('gradebook-updated', data);
+        console.log('[Gradebook] Emitted gradebook-updated event');
     } catch (error) {
         console.error('[Gradebook] Error saving gradebook:', error);
         alert('Error saving gradebook: ' + (error.response?.data?.message || error.message));
@@ -1163,19 +1206,40 @@ const loadGradebook = async () => {
             
             // Load grades
             if (gradebook.midterm && gradebook.midterm.grades) {
+                console.log('[Gradebook] Loading midterm grades:', gradebook.midterm.grades);
                 Object.keys(gradebook.midterm.grades).forEach(studentId => {
                     if (studentGrades.value[studentId]) {
-                        studentGrades.value[studentId].midterm = gradebook.midterm.grades[studentId];
+                        // Ensure we're loading an object, not an array
+                        const midtermGrades = gradebook.midterm.grades[studentId];
+                        if (Array.isArray(midtermGrades)) {
+                            console.warn(`[Gradebook] Midterm grades for student ${studentId} is an array, converting to object`);
+                            studentGrades.value[studentId].midterm = {};
+                        } else {
+                            studentGrades.value[studentId].midterm = { ...midtermGrades };
+                        }
                     }
                 });
             }
             
             if (gradebook.finals && gradebook.finals.grades) {
+                console.log('[Gradebook] Loading finals grades from DB:', JSON.stringify(gradebook.finals.grades, null, 2));
                 Object.keys(gradebook.finals.grades).forEach(studentId => {
                     if (studentGrades.value[studentId]) {
-                        studentGrades.value[studentId].finals = gradebook.finals.grades[studentId];
+                        // Ensure we're loading an object, not an array
+                        const finalsGrades = gradebook.finals.grades[studentId];
+                        if (Array.isArray(finalsGrades)) {
+                            console.warn(`[Gradebook] Finals grades for student ${studentId} is an array, converting to object`);
+                            studentGrades.value[studentId].finals = {};
+                        } else {
+                            studentGrades.value[studentId].finals = { ...finalsGrades };
+                        }
+                        console.log(`[Gradebook] Loaded finals grades for student ${studentId}:`, JSON.stringify(studentGrades.value[studentId].finals, null, 2));
+                    } else {
+                        console.warn(`[Gradebook] Student ${studentId} not found in studentGrades.value`);
                     }
                 });
+            } else {
+                console.log('[Gradebook] No finals grades found in database');
             }
         }
         // If no gradebook data at all, defaults will be used automatically
@@ -1189,6 +1253,16 @@ onMounted(async () => {
     console.log('[Gradebook] Initializing...');
     isInitializing.value = true;
     
+    // Restore which section was open
+    const savedSection = sessionStorage.getItem(`gradebook_section_${props.course.id}`);
+    if (savedSection === 'finals') {
+        showMidtermSection.value = false;
+        showFinalsSection.value = true;
+    } else {
+        showMidtermSection.value = true;
+        showFinalsSection.value = false;
+    }
+    
     await loadGradebook();
     cleanupRemovedClassworks(); // Remove stale auto subcolumns first
     populateSubcolumnsFromClassworks();
@@ -1201,6 +1275,10 @@ onMounted(async () => {
     // Initialization complete, enable autosave
     isInitializing.value = false;
     console.log('[Gradebook] Initialization complete');
+    
+    // Save immediately after initialization to persist periodGrades
+    console.log('[Gradebook] Initial save to persist periodGrades...');
+    saveGradebook();
 });
 
 // Watch for classworks change to keep gradebook in sync (add new, update points, remove deleted)
@@ -1213,6 +1291,10 @@ watch(
         cleanupRemovedClassworks();
         populateSubcolumnsFromClassworks();
         await populateGradesFromSubmissions();
+        
+        // Update summary columns after sync
+        updateSummaryColumns('midterm');
+        updateSummaryColumns('finals');
         
         if (!isInitializing.value) {
             console.log('[Gradebook] Saving gradebook after classwork sync...');
@@ -1228,15 +1310,27 @@ watch(
     async () => {
         console.log('[Gradebook] Students data changed, refreshing grades...');
         await populateGradesFromSubmissions();
+        
+        // Save after populating grades to update periodGrades
+        if (!isInitializing.value) {
+            console.log('[Gradebook] Saving after student grades refresh...');
+            saveGradebook();
+        }
     },
     { deep: true }
 );
 
-// Watch for changes to tables and update summary columns
-watch([midtermTables, finalsTables], () => {
-    updateSummaryColumns('midterm');
-    updateSummaryColumns('finals');
-}, { deep: true });
+// Watch for autoGrades changes to save periodGrades
+watch(
+    () => autoGrades.value,
+    () => {
+        if (!isInitializing.value) {
+            console.log('[Gradebook] Auto grades changed, scheduling save...');
+            scheduleSave();
+        }
+    },
+    { deep: true }
+);
 </script>
 
 <template>
@@ -2006,6 +2100,7 @@ watch([midtermTables, finalsTables], () => {
                                             <input 
                                                 v-else
                                                 v-model="studentGrades[student.id].finals[`${tableKey}-${column.id}-${subcolumn.id}`]"
+                                                @input="() => console.log('[Gradebook] Finals grade input changed:', student.id, studentGrades[student.id].finals)"
                                                 @blur="saveGradebook"
                                                 type="number"
                                                 :max="subcolumn.maxPoints"

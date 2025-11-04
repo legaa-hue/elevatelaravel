@@ -12,9 +12,21 @@ const props = defineProps({
     announcements: Array,
 });
 
-// Debug: Check students prop
+// Debug: Check students prop and program data
 console.log('CourseView - Students prop:', props.students);
 console.log('CourseView - Students count:', props.students?.length);
+console.log('CourseView - Course students:', props.course.students);
+console.log('CourseView - First course student:', props.course.students?.[0]);
+console.log('CourseView - Course program:', props.course.program);
+console.log('CourseView - Course object:', props.course);
+
+// Create a reactive ref for gradebook that can be updated
+const gradebook = ref(props.course.gradebook || {
+    midtermPercentage: 50,
+    finalsPercentage: 50,
+    midterm: { tables: [], grades: {}, periodGrades: {} },
+    finals: { tables: [], grades: {}, periodGrades: {} }
+});
 
 // Restore active tab from sessionStorage or default to 'classwork'
 const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'classwork');
@@ -64,7 +76,7 @@ const tabs = [
 ];
 
 // Watch activeTab and save to sessionStorage
-watch(activeTab, (newTab) => {
+watch(activeTab, (newTab, oldTab) => {
     sessionStorage.setItem(`courseTab_${props.course.id}`, newTab);
 });
 
@@ -823,33 +835,40 @@ const isDoctorate = computed({
 });
 
 // Class Record Grade Calculation Functions
-// Use the computed period grade from the gradebook summary (Midterm Period Grades)
+// Use the reactive gradebook ref so changes are reflected immediately
 const getMidtermGrade = (studentId) => {
-    // Always use the same value as shown in the Gradebook tab: gradebook.midterm.summary[studentId] if available, else 0
-    const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.midterm) return 0;
-    // Use summary table value if available (Gradebook tab uses this)
-    if (gradebook.midterm.summary && gradebook.midterm.summary[studentId] !== undefined && gradebook.midterm.summary[studentId] !== null) {
-        return parseFloat(gradebook.midterm.summary[studentId]);
+    console.log('[ClassRecord] getMidtermGrade for student', studentId, 'gradebook:', gradebook.value);
+    
+    if (!gradebook.value || !gradebook.value.midterm) {
+        console.log('[ClassRecord] No gradebook or midterm data');
+        return 0;
     }
-    // Fallback: use periodGrades if available
-    if (gradebook.midterm.periodGrades && gradebook.midterm.periodGrades[studentId] !== undefined && gradebook.midterm.periodGrades[studentId] !== null) {
-        return parseFloat(gradebook.midterm.periodGrades[studentId]);
+    
+    // Use periodGrades (saved from GradebookContent)
+    if (gradebook.value.midterm.periodGrades && gradebook.value.midterm.periodGrades[studentId] !== undefined && gradebook.value.midterm.periodGrades[studentId] !== null) {
+        console.log('[ClassRecord] Found midterm periodGrades for student', studentId, ':', gradebook.value.midterm.periodGrades[studentId]);
+        return parseFloat(gradebook.value.midterm.periodGrades[studentId]);
     }
+    
+    console.log('[ClassRecord] No periodGrades found for student', studentId);
     return 0;
 };
 
 const getFinalsGrade = (studentId) => {
-    // Always use the same value as shown in the Gradebook tab: gradebook.finals.summary[studentId] if available, else 0
-    const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.finals) return 0;
-    if (gradebook.finals.summary && gradebook.finals.summary[studentId] !== undefined && gradebook.finals.summary[studentId] !== null) {
-        return parseFloat(gradebook.finals.summary[studentId]);
+    console.log('[ClassRecord] getFinalsGrade for student', studentId, 'gradebook:', gradebook.value);
+    
+    if (!gradebook.value || !gradebook.value.finals) {
+        console.log('[ClassRecord] No gradebook or finals data');
+        return 0;
     }
-    // Fallback: use periodGrades if available
-    if (gradebook.finals.periodGrades && gradebook.finals.periodGrades[studentId] !== undefined && gradebook.finals.periodGrades[studentId] !== null) {
-        return parseFloat(gradebook.finals.periodGrades[studentId]);
+    
+    // Use periodGrades (saved from GradebookContent)
+    if (gradebook.value.finals.periodGrades && gradebook.value.finals.periodGrades[studentId] !== undefined && gradebook.value.finals.periodGrades[studentId] !== null) {
+        console.log('[ClassRecord] Found finals periodGrades for student', studentId, ':', gradebook.value.finals.periodGrades[studentId]);
+        return parseFloat(gradebook.value.finals.periodGrades[studentId]);
     }
+    
+    console.log('[ClassRecord] No periodGrades found for student', studentId);
     return 0;
 };
 
@@ -861,6 +880,77 @@ const getFinalGrade = (studentId) => {
     const midtermPercentage = gradebook?.midtermPercentage || 50;
     const finalsPercentage = gradebook?.finalsPercentage || 50;
     return (midterm * (midtermPercentage / 100)) + (finals * (finalsPercentage / 100));
+};
+
+// Convert percentage grade to Philippine grading scale (1.0 - 5.0)
+const convertToGradingScale = (percentGrade) => {
+    if (!percentGrade || percentGrade === 0 || percentGrade === '-') return '-';
+    
+    const grade = parseFloat(percentGrade);
+    
+    // Philippine Grading Scale based on the provided table
+    if (grade >= 100) return 1.0;
+    if (grade >= 99) return 1.15;
+    if (grade >= 98) return 1.2;
+    if (grade >= 97) return 1.25;
+    if (grade >= 96) return 1.3;
+    if (grade >= 95) return 1.35;
+    if (grade >= 94) return 1.4;
+    if (grade >= 93) return 1.45;
+    if (grade >= 92) return 1.5;
+    if (grade >= 91) return 1.55;
+    if (grade >= 90) return 1.6;
+    if (grade >= 89) return 1.65;
+    if (grade >= 88) return 1.7;
+    if (grade >= 87) return 1.75;
+    if (grade >= 86) return 1.8;
+    if (grade >= 85) return 1.85;
+    if (grade >= 84) return 1.9;
+    if (grade >= 83) return 1.95;
+    if (grade >= 82) return 2.0;
+    if (grade >= 81) return 2.05;
+    if (grade >= 80) return 2.1;
+    if (grade >= 79) return 2.15;
+    if (grade >= 78) return 2.2;
+    if (grade >= 77) return 2.25;
+    if (grade >= 76) return 2.3;
+    if (grade >= 75) return 2.35;
+    if (grade >= 74) return 2.4;
+    if (grade >= 73) return 2.45;
+    if (grade >= 72) return 2.5;
+    if (grade >= 71) return 2.55;
+    if (grade >= 70) return 2.6;
+    if (grade >= 69) return 2.65;
+    if (grade >= 68) return 2.7;
+    if (grade >= 67) return 2.75;
+    if (grade >= 66) return 2.8;
+    if (grade >= 65) return 2.85;
+    if (grade >= 64) return 2.9;
+    if (grade >= 63) return 2.95;
+    if (grade >= 62) return 3.0;
+    
+    // Below 62% = 5.0 (Failed)
+    return 5.0;
+};
+
+// Get the final converted grade (average of midterm and finals in 1.0-5.0 scale)
+const getFinalConvertedGrade = (studentId) => {
+    const midtermConverted = convertToGradingScale(getMidtermGrade(studentId));
+    const finalsConverted = convertToGradingScale(getFinalsGrade(studentId));
+    
+    // If either grade is missing, return '-'
+    if (midtermConverted === '-' || finalsConverted === '-') {
+        if (midtermConverted !== '-') return midtermConverted;
+        if (finalsConverted !== '-') return finalsConverted;
+        return '-';
+    }
+    
+    // Get percentages from gradebook or use default 50/50
+    const gradebook = props.course.gradebook;
+    const midtermPercentage = gradebook?.midtermPercentage || 50;
+    const finalsPercentage = gradebook?.finalsPercentage || 50;
+    
+    return (midtermConverted * (midtermPercentage / 100)) + (finalsConverted * (finalsPercentage / 100));
 };
 
 const getClassRecordRemark = (finalGrade) => {
@@ -944,43 +1034,51 @@ const exportClassStandings = () => {
                 <div class="p-6">
                     <!-- Classwork Tab -->
                     <div v-if="activeTab === 'classwork'">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <!-- Midterm Period Grades Table -->
-                            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-                                <h2 class="text-lg font-bold text-gray-900 mb-4">Midterm Period Grades</h2>
-                                <table class="w-full border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100">
-                                            <th class="px-6 py-3 text-left font-bold border-b">Student Name</th>
-                                            <th class="px-6 py-3 text-center font-bold border-b">Midterm Grade</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="student in students" :key="student.id" class="hover:bg-gray-50">
-                                            <td class="px-6 py-3 border-b">{{ student.name }}</td>
-                                            <td class="px-6 py-3 border-b text-center font-semibold">{{ getMidtermGrade(student.id).toFixed(2) }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- Left Side: Latest Materials (2/3 width) -->
-                            <div class="lg:col-span-2">
-                                <div class="bg-white rounded-lg shadow-md p-6">
-                                    <div class="flex justify-between items-center mb-6">
-                                        <h2 class="text-xl font-bold text-gray-900">Latest Materials</h2>
-                                        <select 
-                                            v-model="materialFilter"
-                                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 text-sm"
-                                        >
-                                            <option value="all">All</option>
-                                            <option value="materials">Materials</option>
-                                            <option value="tasks">Tasks</option>
-                                            <option value="quizzes">Quizzes</option>
-                                            <option value="activities">Activities</option>
-                                            <option value="essays">Essays</option>
-                                            <option value="projects">Projects</option>
-                                        </select>
+                        <!-- Latest Materials Section (Full width) -->
+                        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                            <!-- Header with Create Button and Filter -->
+                            <div class="bg-gradient-to-r from-red-900 to-red-800 px-6 py-4">
+                                <div class="flex justify-between items-center">
+                                    <div>
+                                        <h2 class="text-2xl font-bold text-white">Course Materials</h2>
+                                        <p class="text-red-100 text-sm mt-1">Manage assignments, quizzes, and course content</p>
                                     </div>
+                                    <button 
+                                        @click="openClassworkModal"
+                                        class="flex items-center gap-2 px-6 py-3 bg-white text-red-900 rounded-lg hover:bg-gray-50 transition font-semibold shadow-lg transform hover:scale-105"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Create Material
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Filter Bar -->
+                            <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
+                                <div class="flex items-center gap-3">
+                                    <span class="text-sm font-medium text-gray-700">Filter by:</span>
+                                    <select 
+                                        v-model="materialFilter"
+                                        class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-red-900 text-sm bg-white"
+                                    >
+                                        <option value="all">All Materials</option>
+                                        <option value="materials">📚 Materials</option>
+                                        <option value="tasks">📝 Tasks</option>
+                                        <option value="quizzes">❓ Quizzes</option>
+                                        <option value="activities">🎯 Activities</option>
+                                        <option value="essays">📄 Essays</option>
+                                        <option value="projects">🚀 Projects</option>
+                                    </select>
+                                    <div class="ml-auto text-sm text-gray-600">
+                                        <span class="font-semibold">{{ filteredMaterials.length + filteredAnnouncements.length }}</span> items
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Materials Content -->
+                            <div class="p-6">
 
                                     <!-- Materials List -->
                                     <div v-if="filteredMaterials.length === 0 && filteredAnnouncements.length === 0" class="text-center py-12 text-gray-500">
@@ -1098,78 +1196,6 @@ const exportClassStandings = () => {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
-                            </div>
-
-                            <!-- Right Side: To Do List (1/3 width) -->
-                            <div class="lg:col-span-1">
-                                <div class="bg-white rounded-lg shadow-md p-6 sticky top-6">
-                                    <div class="flex justify-between items-center mb-4">
-                                        <h2 class="text-xl font-bold text-gray-900">To Do</h2>
-                                        <button 
-                                            @click="openClassworkModal"
-                                            class="flex items-center gap-2 px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition font-medium text-sm"
-                                        >
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                                            </svg>
-                                            Create Material
-                                        </button>
-                                    </div>
-
-                                    <div class="space-y-3">
-                                        <!-- To Do Items (materials with submissions to grade) -->
-                                        <div v-if="classwork.filter(item => item.submitted_count > item.graded_count).length === 0" class="text-center py-8 text-gray-500">
-                                            <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            <p class="text-sm">All caught up!</p>
-                                            <p class="text-xs mt-1">No pending tasks</p>
-                                        </div>
-
-                                        <div
-                                            v-for="item in classwork.filter(item => item.submitted_count > item.graded_count)"
-                                            :key="item.id"
-                                            class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition cursor-pointer"
-                                            @click="viewClasswork(item)"
-                                        >
-                                            <div class="flex items-start justify-between">
-                                                <div class="flex-1 min-w-0">
-                                                    <h4 class="font-medium text-gray-900 text-sm truncate">{{ item.title }}</h4>
-                                                    <span class="inline-block px-2 py-0.5 text-xs font-medium rounded mt-1" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
-                                                        {{ item.type }}
-                                                    </span>
-                                                    <div class="flex items-center gap-2 mt-2">
-                                                        <span class="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded font-semibold">
-                                                            {{ item.submitted_count - item.graded_count }} to grade
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <svg class="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                </svg>
-                                            </div>
-                                        </div>
-
-                                        <!-- Upcoming Due Dates -->
-                                        <div class="mt-6 pt-4 border-t border-gray-200">
-                                            <h3 class="text-sm font-semibold text-gray-700 mb-3">Upcoming Due Dates</h3>
-                                            <div v-if="classwork.filter(item => item.due_date).length === 0" class="text-center py-4 text-gray-400 text-xs">
-                                                No upcoming deadlines
-                                            </div>
-                                            <div v-else class="space-y-2">
-                                                <div
-                                                    v-for="item in classwork.filter(item => item.due_date).slice(0, 5)"
-                                                    :key="'due-' + item.id"
-                                                    class="flex items-center justify-between text-xs"
-                                                >
-                                                    <span class="text-gray-700 truncate">{{ item.title }}</span>
-                                                    <span class="text-gray-500 text-xs ml-2 flex-shrink-0">{{ item.due_date_formatted }}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1272,25 +1298,24 @@ const exportClassStandings = () => {
                                                 :style="{ width: Math.min(student.progress.completion_rate, 100) + '%' }"
                                             ></div>
                                         </div>
-                                        <div class="flex items-center justify-between text-xs text-gray-600">
-                                            <span>{{ student.progress.submitted }}/{{ student.progress.total_classwork }} submitted</span>
-                                            <span>{{ student.progress.graded }} graded</span>
+                                        <div class="grid grid-cols-2 gap-2 text-xs">
+                                            <div class="bg-blue-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Submitted</div>
+                                                <div class="font-bold text-blue-700 text-base">{{ student.progress.submitted }}<span class="text-gray-400 text-xs">/{{ student.progress.total_classwork }}</span></div>
+                                            </div>
+                                            <div class="bg-green-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Graded</div>
+                                                <div class="font-bold text-green-700 text-base">{{ student.progress.graded }}<span class="text-gray-400 text-xs">/{{ student.progress.total_classwork }}</span></div>
+                                            </div>
+                                            <div class="bg-yellow-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Pending</div>
+                                                <div class="font-bold text-yellow-700 text-base">{{ student.progress.pending || 0 }}</div>
+                                            </div>
+                                            <div class="bg-red-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Missing</div>
+                                                <div class="font-bold text-red-700 text-base">{{ student.progress.not_submitted || 0 }}</div>
+                                            </div>
                                         </div>
-                                        <div class="flex items-center justify-between text-xs mt-1">
-                                            <span class="text-yellow-600">{{ student.progress.pending || 0 }} pending</span>
-                                            <span class="text-red-600">{{ student.progress.not_submitted || 0 }} not submitted</span>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Average Grade -->
-                                    <div v-if="student.progress.average_grade !== null" class="bg-green-50 rounded-lg p-2 mb-3">
-                                        <div class="flex items-center justify-between">
-                                            <span class="text-xs font-medium text-gray-700">Average Grade</span>
-                                            <span class="text-lg font-bold text-green-700">{{ student.progress.average_grade }}</span>
-                                        </div>
-                                    </div>
-                                    <div v-else class="bg-gray-50 rounded-lg p-2 mb-3">
-                                        <div class="text-xs text-center text-gray-500">No grades yet</div>
                                     </div>
                                     
                                     <!-- View Performance Button -->
@@ -1314,7 +1339,8 @@ const exportClassStandings = () => {
                             :course="course"
                             :students="students"
                             :classworks="classworks"
-                            :gradebook="course.gradebook"
+                            :gradebook="gradebook"
+                            @gradebook-updated="(updatedGradebook) => gradebook = updatedGradebook"
                         />
                     </div>
 
@@ -1382,7 +1408,7 @@ const exportClassStandings = () => {
                                     </thead>
                                     <tbody>
                                         <tr 
-                                            v-for="student in students" 
+                                            v-for="student in course.students" 
                                             :key="student.id"
                                             class="hover:bg-gray-50 border-b"
                                         >
@@ -1393,30 +1419,30 @@ const exportClassStandings = () => {
                                             
                                             <!-- Program -->
                                             <td class="px-6 py-4 text-center text-gray-700 border border-gray-300">
-                                                {{ student.program || 'N/A' }}
+                                                {{ student.program || course.program?.name || 'N/A' }}
                                             </td>
                                             
                                             <!-- Midterm Grade -->
                                             <td class="px-6 py-4 text-center font-semibold border border-gray-300"
-                                                :class="getMidtermGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
-                                                {{ getMidtermGrade(student.id).toFixed(2) }}
+                                                :class="convertToGradingScale(getMidtermGrade(student.id)) !== '-' && convertToGradingScale(getMidtermGrade(student.id)) <= passingGrade ? 'text-green-600' : convertToGradingScale(getMidtermGrade(student.id)) === '-' ? 'text-gray-500' : 'text-red-600'">
+                                                {{ convertToGradingScale(getMidtermGrade(student.id)) !== '-' ? convertToGradingScale(getMidtermGrade(student.id)).toFixed(2) : '-' }}
                                             </td>
                                             
                                             <!-- Final Grade -->
                                             <td class="px-6 py-4 text-center font-semibold border border-gray-300"
-                                                :class="getFinalsGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
-                                                {{ getFinalsGrade(student.id).toFixed(2) }}
+                                                :class="convertToGradingScale(getFinalsGrade(student.id)) !== '-' && convertToGradingScale(getFinalsGrade(student.id)) <= passingGrade ? 'text-green-600' : convertToGradingScale(getFinalsGrade(student.id)) === '-' ? 'text-gray-500' : 'text-red-600'">
+                                                {{ convertToGradingScale(getFinalsGrade(student.id)) !== '-' ? convertToGradingScale(getFinalsGrade(student.id)).toFixed(2) : '-' }}
                                             </td>
                                             
                                             <!-- Remarks -->
                                             <td class="px-6 py-4 text-center font-bold border border-gray-300"
-                                                :class="getClassRecordRemarkClass(getFinalGrade(student.id))">
-                                                {{ getClassRecordRemark(getFinalGrade(student.id)) }}
+                                                :class="getClassRecordRemarkClass(getFinalConvertedGrade(student.id))">
+                                                {{ getClassRecordRemark(getFinalConvertedGrade(student.id)) }}
                                             </td>
                                         </tr>
                                         
                                         <!-- Empty State -->
-                                        <tr v-if="students.length === 0">
+                                        <tr v-if="course.students.length === 0">
                                             <td colspan="5" class="px-6 py-12 text-center text-gray-500">
                                                 <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -1480,11 +1506,11 @@ const exportClassStandings = () => {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div class="flex items-center gap-2">
                                     <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                                    <span class="text-sm">{{ programType.value === 'masteral' ? '1.75 and below: Passed' : '1.45 and below: Passed' }}</span>
+                                    <span class="text-sm">{{ passingGrade }} and below: Passed</span>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                                    <span class="text-sm">Above {{ programType.value === 'masteral' ? '1.75' : '1.45' }}: Failed/Retake</span>
+                                    <span class="text-sm">Above {{ passingGrade }}: Failed/Retake</span>
                                 </div>
                             </div>
                         </div>

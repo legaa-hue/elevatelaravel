@@ -1,9 +1,13 @@
 <script setup>
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
 import { Link } from '@inertiajs/vue3';
 </script>
 
 <template>
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
+    
     <div class="flex min-h-screen flex-col items-center bg-white pt-6 sm:justify-center sm:pt-0">
         <div>
             <Link href="/">

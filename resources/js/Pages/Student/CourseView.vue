@@ -907,55 +907,62 @@ const unsubmitWork = () => {
 
                     <!-- Grades Tab -->
                     <div v-if="activeTab === 'grades'" class="space-y-6">
-                        <!-- Overall Grade -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-sm font-medium text-gray-700 mb-2">Overall Grade</h3>
-                            <div class="flex items-baseline gap-2">
-                                <span class="text-4xl font-bold text-gray-900">{{ courseGrades?.overall_percentage || '0.00' }}%</span>
-                                <span class="text-sm text-gray-500">Earned {{ courseGrades?.total_earned || 0 }}/{{ courseGrades?.total_points || 0 }} pts</span>
-                            </div>
-                        </div>
-
-                        <!-- Term Grades -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Term Grades</h3>
-                            <div class="grid grid-cols-3 gap-4">
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Midterm</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.midterm || '—' }}</p>
-                                </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Tentative Final</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.tentative_final || '—' }}</p>
-                                </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Final</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.final || '—' }}</p>
+                        <!-- Header -->
+                        <div class="bg-gradient-to-r from-red-900 to-red-700 rounded-lg p-6 text-white shadow-lg">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                                </svg>
+                                <div>
+                                    <h2 class="text-2xl font-bold">My Grades</h2>
+                                    <p class="text-red-200 text-sm">Academic Performance Summary</p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Category Breakdown -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Category Breakdown</h3>
+                        <!-- Midterm Grades -->
+                        <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                            <div class="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253" />
+                                    </svg>
+                                    Midterm Period
+                                </h3>
+                            </div>
                             <div class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-200">
-                                    <thead>
+                                <table class="w-full">
+                                    <thead class="bg-blue-50">
                                         <tr>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percent</th>
+                                            <th v-for="(value, key) in courseGrades?.midterm_components || {}" :key="key" 
+                                                class="px-6 py-4 text-center text-sm font-bold text-gray-700 uppercase border-r border-gray-300">
+                                                {{ key }}
+                                            </th>
+                                            <th class="px-6 py-4 text-center text-sm font-bold text-white uppercase bg-blue-600">
+                                                Midterm Grade
+                                            </th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-for="category in courseGrades?.categories || []" :key="category.name">
-                                            <td class="px-4 py-4 text-sm text-gray-900">{{ category.name }}</td>
-                                            <td class="px-4 py-4 text-sm text-gray-600">{{ category.earned }}/{{ category.total }} pts</td>
-                                            <td class="px-4 py-4 text-sm text-gray-900">{{ category.percentage }}</td>
+                                    <tbody>
+                                        <tr v-if="courseGrades?.midterm_components && Object.keys(courseGrades.midterm_components).length > 0" 
+                                            class="border-t border-gray-200">
+                                            <td v-for="(value, key) in courseGrades.midterm_components" :key="key" 
+                                                class="px-6 py-5 text-center border-r border-gray-200 bg-white">
+                                                <span class="text-xl font-bold text-gray-900">{{ value }}</span>
+                                            </td>
+                                            <td class="px-6 py-5 text-center bg-blue-50">
+                                                <span class="text-3xl font-bold" 
+                                                      :class="courseGrades?.midterm !== '—' && parseFloat(courseGrades.midterm) <= 1.75 ? 'text-green-600' : courseGrades?.midterm === '—' ? 'text-gray-400' : 'text-red-600'">
+                                                    {{ courseGrades?.midterm || '—' }}
+                                                </span>
+                                            </td>
                                         </tr>
-                                        <tr v-if="!courseGrades?.categories || courseGrades.categories.length === 0">
-                                            <td colspan="3" class="px-4 py-8 text-center text-gray-500">
-                                                No grades available yet
+                                        <tr v-else>
+                                            <td colspan="100" class="px-6 py-12 text-center text-gray-500">
+                                                <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                <p class="font-medium">No midterm grades available yet</p>
                                             </td>
                                         </tr>
                                     </tbody>
@@ -963,94 +970,80 @@ const unsubmitWork = () => {
                             </div>
                         </div>
 
-                        <!-- My Gradebook -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <!-- Finals Grades -->
+                        <div class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
+                            <div class="bg-gradient-to-r from-purple-600 to-purple-700 p-4">
+                                <h3 class="text-xl font-bold text-white flex items-center gap-2">
+                                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    My Gradebook
+                                    Finals Period
                                 </h3>
                             </div>
-                            <p class="text-sm text-gray-500 mb-4">All your graded work</p>
-                            
-                            <!-- Graded Submissions List -->
-                            <div v-if="completedClassworks && completedClassworks.length > 0" class="space-y-3">
-                                <div v-for="work in completedClassworks.filter(w => w.submission && w.submission.grade !== null)" :key="work.id"
-                                     class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                                    <div class="flex items-start justify-between">
-                                        <div class="flex-1">
-                                            <div class="flex items-center gap-2 mb-2">
-                                                <span class="px-2 py-1 text-xs font-medium rounded"
-                                                      :class="{
-                                                          'bg-blue-100 text-blue-800': work.type === 'assignment',
-                                                          'bg-green-100 text-green-800': work.type === 'activity',
-                                                          'bg-purple-100 text-purple-800': work.type === 'quiz',
-                                                          'bg-gray-100 text-gray-800': work.type === 'lesson'
-                                                      }">
-                                                    {{ work.type.charAt(0).toUpperCase() + work.type.slice(1) }}
+                            <div class="overflow-x-auto">
+                                <table class="w-full">
+                                    <thead class="bg-purple-50">
+                                        <tr>
+                                            <th v-for="(value, key) in courseGrades?.finals_components || {}" :key="key" 
+                                                class="px-6 py-4 text-center text-sm font-bold text-gray-700 uppercase border-r border-gray-300">
+                                                {{ key }}
+                                            </th>
+                                            <th class="px-6 py-4 text-center text-sm font-bold text-white uppercase bg-purple-600">
+                                                Final Grade
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr v-if="courseGrades?.finals_components && Object.keys(courseGrades.finals_components).length > 0" 
+                                            class="border-t border-gray-200">
+                                            <td v-for="(value, key) in courseGrades.finals_components" :key="key" 
+                                                class="px-6 py-5 text-center border-r border-gray-200 bg-white">
+                                                <span class="text-xl font-bold text-gray-900">{{ value }}</span>
+                                            </td>
+                                            <td class="px-6 py-5 text-center bg-purple-50">
+                                                <span class="text-3xl font-bold" 
+                                                      :class="courseGrades?.final !== '—' && parseFloat(courseGrades.final) <= 1.75 ? 'text-green-600' : courseGrades?.final === '—' ? 'text-gray-400' : 'text-red-600'">
+                                                    {{ courseGrades?.final || '—' }}
                                                 </span>
-                                                <span v-if="work.submission.status === 'graded'" 
-                                                      class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                                                    Graded
-                                                </span>
-                                                <span v-if="work.submission.status === 'returned'" 
-                                                      class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                                                    Returned
-                                                </span>
-                                            </div>
-                                            <h4 class="font-semibold text-gray-900 mb-1">{{ work.title }}</h4>
-                                            <p v-if="work.due_date" class="text-xs text-gray-500">
-                                                Due: {{ work.due_date }}
-                                            </p>
-                                            <p v-if="work.submission.graded_at" class="text-xs text-gray-500">
-                                                Graded: {{ new Date(work.submission.graded_at).toLocaleDateString() }}
-                                            </p>
-                                        </div>
-                                        <div class="text-right">
-                                            <div class="text-2xl font-bold"
-                                                 :class="{
-                                                     'text-green-600': (work.submission.grade / work.points) >= 0.9,
-                                                     'text-blue-600': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
-                                                     'text-yellow-600': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
-                                                     'text-red-600': (work.submission.grade / work.points) < 0.6
-                                                 }">
-                                                {{ work.submission.grade }}/{{ work.points }}
-                                            </div>
-                                            <div class="text-sm text-gray-600">
-                                                {{ work.points > 0 ? Math.round((work.submission.grade / work.points) * 100) : 0 }}%
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Progress Bar -->
-                                    <div class="mt-3 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div class="h-2 rounded-full transition-all"
-                                             :class="{
-                                                 'bg-green-500': (work.submission.grade / work.points) >= 0.9,
-                                                 'bg-blue-500': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
-                                                 'bg-yellow-500': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
-                                                 'bg-red-500': (work.submission.grade / work.points) < 0.6
-                                             }"
-                                             :style="{ width: (work.points > 0 ? Math.min((work.submission.grade / work.points) * 100, 100) : 0) + '%' }">
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Feedback -->
-                                    <div v-if="work.submission.feedback" class="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                        <p class="text-xs font-semibold text-blue-900 mb-1">Teacher Feedback:</p>
-                                        <p class="text-sm text-blue-800">{{ work.submission.feedback }}</p>
-                                    </div>
-                                </div>
+                                            </td>
+                                        </tr>
+                                        <tr v-else>
+                                            <td colspan="100" class="px-6 py-12 text-center text-gray-500">
+                                                <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                </svg>
+                                                <p class="font-medium">No finals grades available yet</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
-                            
-                            <!-- No Graded Work -->
-                            <div v-else class="text-center py-8 text-gray-500">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </div>
+
+                        <!-- Grading Scale Legend -->
+                        <div class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <p class="mt-2">No graded assignments yet</p>
+                                Grading Scale Information
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="text-sm">1.75 and below: Passing (Masteral)</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="text-sm">1.45 and below: Passing (Doctorate)</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                                    <span class="text-sm">Above passing grade: Needs Improvement</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium">Scale: 1.0 (Excellent) - 5.0 (Failed)</span>
+                                </div>
                             </div>
                         </div>
                     </div>

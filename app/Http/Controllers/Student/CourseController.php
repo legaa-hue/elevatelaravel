@@ -108,14 +108,337 @@ class CourseController extends Controller
 
         // Get course grades from gradebook (already cast to array in model)
         $gradebook = $course->gradebook ?? null;
+        $studentId = auth()->id();
+
+        // Get student's midterm and finals grades from periodGrades
+        $midtermGrade = null;
+        $finalsGrade = null;
+        $midtermComponents = [];
+        $finalsComponents = [];
+        $midtermTables = [];
+        $finalsTables = [];
+
+        if ($gradebook) {
+            // Get midterm grade (percentage from gradebook)
+            if (isset($gradebook['midterm']['periodGrades'][$studentId])) {
+                $midtermGrade = $gradebook['midterm']['periodGrades'][$studentId];
+            }
+
+            // Get midterm tables
+            if (isset($gradebook['midterm']['tables'])) {
+                $midtermTables = $gradebook['midterm']['tables'];
+            }
+            
+            // Extract midterm component scores by aggregating individual scores for each table
+            if (isset($gradebook['midterm']['grades'][$studentId])) {
+                $studentGrades = $gradebook['midterm']['grades'][$studentId];
+                
+                // For each main table (async, sync, exam), aggregate all scores that start with that table ID
+                foreach ($midtermTables as $table) {
+                    $tableData = is_array($table) ? $table : (array)$table;
+                    $tableId = $tableData['id'] ?? null;
+                    
+                    // Skip summary table
+                    if (!empty($tableData['isSummary']) || !$tableId) {
+                        continue;
+                    }
+                    
+                    // Find all grade keys that start with this table ID
+                    $tableScores = [];
+                    foreach ($studentGrades as $key => $value) {
+                        if (strpos($key, $tableId . '-') === 0) {
+                            $tableScores[] = floatval($value);
+                        }
+                    }
+                    
+                    // Calculate average if we have scores (these are percentages 0-100)
+                    if (!empty($tableScores)) {
+                        $averagePercentage = array_sum($tableScores) / count($tableScores);
+                        
+                        // Store the percentage score directly (not weighted)
+                        $midtermComponents[$tableId] = $averagePercentage;
+                    }
+                }
+            }
+            
+            // If gradebook grades are empty, try to auto-populate from classwork submissions
+            if (empty($midtermComponents)) {
+                // Get all classwork IDs from the midterm tables
+                $classworkIds = [];
+                foreach ($midtermTables as $table) {
+                    $tableData = is_array($table) ? $table : (array)$table;
+                    if (!empty($tableData['isSummary']) || empty($tableData['columns'])) {
+                        continue;
+                    }
+                    
+                    foreach ($tableData['columns'] as $column) {
+                        $columnData = is_array($column) ? $column : (array)$column;
+                        if (!empty($columnData['subcolumns'])) {
+                            foreach ($columnData['subcolumns'] as $subcolumn) {
+                                $subcolData = is_array($subcolumn) ? $subcolumn : (array)$subcolumn;
+                                if (!empty($subcolData['classworkId'])) {
+                                    $classworkIds[$tableData['id']][] = [
+                                        'classworkId' => $subcolData['classworkId'],
+                                        'maxPoints' => $subcolData['maxPoints'] ?? 100
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Fetch submissions for these classworks
+                if (!empty($classworkIds)) {
+                    $allClassworkIds = [];
+                    foreach ($classworkIds as $items) {
+                        foreach ($items as $item) {
+                            $allClassworkIds[] = $item['classworkId'];
+                        }
+                    }
+                    
+                    $submissions = \App\Models\ClassworkSubmission::whereIn('classwork_id', $allClassworkIds)
+                        ->where('student_id', $studentId)
+                        ->where('status', 'graded')
+                        ->get(['classwork_id', 'grade']);
+                    
+                    // Build a map of classwork_id => grade
+                    $submissionGrades = [];
+                    foreach ($submissions as $submission) {
+                        $submissionGrades[$submission->classwork_id] = floatval($submission->grade);
+                    }
+                    
+                    // Calculate component scores based on submissions
+                    foreach ($classworkIds as $tableId => $classworks) {
+                        $totalPoints = 0;
+                        $earnedPoints = 0;
+                        $hasSubmissions = false;
+                        
+                        foreach ($classworks as $classwork) {
+                            $totalPoints += $classwork['maxPoints'];
+                            if (isset($submissionGrades[$classwork['classworkId']])) {
+                                $earnedPoints += $submissionGrades[$classwork['classworkId']];
+                                $hasSubmissions = true;
+                            }
+                        }
+                        
+                        // Calculate percentage score (0-100%)
+                        if ($hasSubmissions && $totalPoints > 0) {
+                            // Calculate raw percentage: (earned/total) * 100
+                            // Example: (1/1) * 100 = 100%
+                            $midtermComponents[$tableId] = ($earnedPoints / $totalPoints) * 100;
+                        }
+                    }
+                }
+            }
+
+            // Get finals grade (percentage from gradebook)
+            if (isset($gradebook['finals']['periodGrades'][$studentId])) {
+                $finalsGrade = $gradebook['finals']['periodGrades'][$studentId];
+            }
+
+            // Get finals tables
+            if (isset($gradebook['finals']['tables'])) {
+                $finalsTables = $gradebook['finals']['tables'];
+            }
+            
+            // Extract finals component scores by aggregating individual scores for each table
+            if (isset($gradebook['finals']['grades'][$studentId])) {
+                $studentGrades = $gradebook['finals']['grades'][$studentId];
+                
+                // For each main table (async, sync, exam), aggregate all scores that start with that table ID
+                foreach ($finalsTables as $table) {
+                    $tableData = is_array($table) ? $table : (array)$table;
+                    $tableId = $tableData['id'] ?? null;
+                    
+                    // Skip summary table
+                    if (!empty($tableData['isSummary']) || !$tableId) {
+                        continue;
+                    }
+                    
+                    // Find all grade keys that start with this table ID
+                    $tableScores = [];
+                    foreach ($studentGrades as $key => $value) {
+                        if (strpos($key, $tableId . '-') === 0) {
+                            $tableScores[] = floatval($value);
+                        }
+                    }
+                    
+                    // Calculate average if we have scores (these are percentages 0-100)
+                    if (!empty($tableScores)) {
+                        $averagePercentage = array_sum($tableScores) / count($tableScores);
+                        
+                        // Store the percentage score directly (not weighted)
+                        $finalsComponents[$tableId] = $averagePercentage;
+                    }
+                }
+            }
+            
+            // If gradebook grades are empty, try to auto-populate from classwork submissions
+            if (empty($finalsComponents)) {
+                // Get all classwork IDs from the finals tables
+                $classworkIds = [];
+                foreach ($finalsTables as $table) {
+                    $tableData = is_array($table) ? $table : (array)$table;
+                    if (!empty($tableData['isSummary']) || empty($tableData['columns'])) {
+                        continue;
+                    }
+                    
+                    foreach ($tableData['columns'] as $column) {
+                        $columnData = is_array($column) ? $column : (array)$column;
+                        if (!empty($columnData['subcolumns'])) {
+                            foreach ($columnData['subcolumns'] as $subcolumn) {
+                                $subcolData = is_array($subcolumn) ? $subcolumn : (array)$subcolumn;
+                                if (!empty($subcolData['classworkId'])) {
+                                    $classworkIds[$tableData['id']][] = [
+                                        'classworkId' => $subcolData['classworkId'],
+                                        'maxPoints' => $subcolData['maxPoints'] ?? 100
+                                    ];
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Fetch submissions for these classworks
+                if (!empty($classworkIds)) {
+                    $allClassworkIds = [];
+                    foreach ($classworkIds as $items) {
+                        foreach ($items as $item) {
+                            $allClassworkIds[] = $item['classworkId'];
+                        }
+                    }
+                    
+                    $submissions = \App\Models\ClassworkSubmission::whereIn('classwork_id', $allClassworkIds)
+                        ->where('student_id', $studentId)
+                        ->where('status', 'graded')
+                        ->get(['classwork_id', 'grade']);
+                    
+                    // Build a map of classwork_id => grade
+                    $submissionGrades = [];
+                    foreach ($submissions as $submission) {
+                        $submissionGrades[$submission->classwork_id] = floatval($submission->grade);
+                    }
+                    
+                    // Calculate component scores based on submissions
+                    foreach ($classworkIds as $tableId => $classworks) {
+                        $totalPoints = 0;
+                        $earnedPoints = 0;
+                        $hasSubmissions = false;
+                        
+                        foreach ($classworks as $classwork) {
+                            $totalPoints += $classwork['maxPoints'];
+                            if (isset($submissionGrades[$classwork['classworkId']])) {
+                                $earnedPoints += $submissionGrades[$classwork['classworkId']];
+                                $hasSubmissions = true;
+                            }
+                        }
+                        
+                        // Calculate percentage score (0-100%)
+                        if ($hasSubmissions && $totalPoints > 0) {
+                            // Calculate raw percentage: (earned/total) * 100
+                            $finalsComponents[$tableId] = ($earnedPoints / $totalPoints) * 100;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert percentage grades to Philippine grading scale (1.0-5.0)
+        $convertToGradingScale = function($percentGrade) {
+            if (!$percentGrade || $percentGrade === 0) return null;
+            
+            $grade = floatval($percentGrade);
+            
+            if ($grade >= 100) return 1.0;
+            if ($grade >= 99) return 1.15;
+            if ($grade >= 98) return 1.2;
+            if ($grade >= 97) return 1.25;
+            if ($grade >= 96) return 1.3;
+            if ($grade >= 95) return 1.35;
+            if ($grade >= 94) return 1.4;
+            if ($grade >= 93) return 1.45;
+            if ($grade >= 92) return 1.5;
+            if ($grade >= 91) return 1.55;
+            if ($grade >= 90) return 1.6;
+            if ($grade >= 89) return 1.65;
+            if ($grade >= 88) return 1.7;
+            if ($grade >= 87) return 1.75;
+            if ($grade >= 86) return 1.8;
+            if ($grade >= 85) return 1.85;
+            if ($grade >= 84) return 1.9;
+            if ($grade >= 83) return 1.95;
+            if ($grade >= 82) return 2.0;
+            if ($grade >= 81) return 2.05;
+            if ($grade >= 80) return 2.1;
+            if ($grade >= 79) return 2.15;
+            if ($grade >= 78) return 2.2;
+            if ($grade >= 77) return 2.25;
+            if ($grade >= 76) return 2.3;
+            if ($grade >= 75) return 2.35;
+            if ($grade >= 74) return 2.4;
+            if ($grade >= 73) return 2.45;
+            if ($grade >= 72) return 2.5;
+            if ($grade >= 71) return 2.55;
+            if ($grade >= 70) return 2.6;
+            if ($grade >= 69) return 2.65;
+            if ($grade >= 68) return 2.7;
+            if ($grade >= 67) return 2.75;
+            if ($grade >= 66) return 2.8;
+            if ($grade >= 65) return 2.85;
+            if ($grade >= 64) return 2.9;
+            if ($grade >= 63) return 2.95;
+            if ($grade >= 62) return 3.0;
+            
+            return 5.0; // Below 62% = Failed
+        };
+
+        // Format component scores with clean names
+        $formatComponents = function($components, $tables) use ($studentId) {
+            $formatted = [];
+            
+            // If no tables defined or components, return empty
+            if (empty($tables)) {
+                return $formatted;
+            }
+            
+            // Map table IDs to their clean names and display the scores
+            foreach ($tables as $table) {
+                $tableId = is_array($table) ? ($table['id'] ?? null) : ($table->id ?? null);
+                $tableName = is_array($table) ? ($table['name'] ?? 'Unknown') : ($table->name ?? 'Unknown');
+                $isSummary = is_array($table) ? ($table['isSummary'] ?? false) : ($table->isSummary ?? false);
+                
+                // Skip the summary table itself
+                if ($isSummary) {
+                    continue;
+                }
+                
+                // Look for component with this table ID
+                if (isset($components[$tableId])) {
+                    $value = $components[$tableId];
+                    if ($value === null || $value === '' || $value === 'auto') {
+                        $formatted[$tableName] = '—';
+                    } else {
+                        $formatted[$tableName] = number_format((float)$value, 2);
+                    }
+                } else {
+                    $formatted[$tableName] = '—';
+                }
+            }
+            
+            return $formatted;
+        };
+
+        $midtermComponentsFormatted = $formatComponents($midtermComponents, $midtermTables);
+        $finalsComponentsFormatted = $formatComponents($finalsComponents, $finalsTables);
 
         $courseGrades = [
             'overall_percentage' => $gradebook['overallGrade'] ?? '0.00',
             'total_earned' => $gradebook['totalEarned'] ?? 0,
             'total_points' => $gradebook['totalPoints'] ?? 0,
-            'midterm' => $gradebook['termGrades']['midterm'] ?? '—',
-            'tentative_final' => $gradebook['termGrades']['tentativeFinal'] ?? '—',
-            'final' => $gradebook['termGrades']['final'] ?? '—',
+            'midterm' => $midtermGrade !== null ? number_format($convertToGradingScale($midtermGrade), 2) : '—',
+            'midterm_components' => $midtermComponentsFormatted,
+            'final' => $finalsGrade !== null ? number_format($convertToGradingScale($finalsGrade), 2) : '—',
+            'finals_components' => $finalsComponentsFormatted,
             'categories' => [],
         ];
 
@@ -250,9 +573,9 @@ class CourseController extends Controller
             ->map(function ($student) use ($course) {
                 $pivot = $student->pivot;
                 
-                // Get all classwork for this course that requires submission
+                // Get all classwork for this course (excluding materials and lessons)
                 $classwork = $course->classworks()
-                    ->where('has_submission', true)
+                    ->whereNotIn('type', ['material', 'lesson'])
                     ->where('status', '!=', 'draft')
                     ->get();
                 
@@ -263,19 +586,27 @@ class CourseController extends Controller
                     ->get();
                 
                 // Calculate progress
-                $totalClasswork = $classwork->where('has_submission', true)->count();
-                $submittedCount = $submissions->where('status', '!=', 'draft')->pluck('classwork_id')->unique()->count();
-                $gradedCount = $submissions->whereIn('status', ['graded', 'returned'])->pluck('classwork_id')->unique()->count();
+                $totalClasswork = $classwork->count();
                 
-                // Calculate average grade
+                // Get unique classwork IDs for each status
+                $submittedClassworkIds = $submissions->where('status', '!=', 'draft')->pluck('classwork_id')->unique();
+                $gradedClassworkIds = $submissions->whereIn('status', ['graded', 'returned'])->pluck('classwork_id')->unique();
+                $pendingClassworkIds = $submissions->where('status', 'submitted')->pluck('classwork_id')->unique();
+                
+                // Count unique classwork for each category
+                $submittedCount = $submittedClassworkIds->count();
+                $gradedCount = $gradedClassworkIds->count();
+                $pendingCount = $pendingClassworkIds->count(); // Unique pending classwork, not total submissions
+                $notSubmittedCount = max(0, $totalClasswork - $submittedCount);
+                
+                // Calculate average grade from graded submissions only
                 $gradedSubmissions = $submissions->whereIn('status', ['graded', 'returned'])->where('grade', '!=', null);
                 $averageGrade = $gradedSubmissions->count() > 0 
                     ? round($gradedSubmissions->avg('grade'), 2)
                     : null;
                 
-                // Calculate pending and not submitted counts
-                $pendingCount = $submissions->where('status', 'submitted')->count();
-                $notSubmittedCount = max(0, $totalClasswork - $submittedCount);
+                // Calculate completion rate based on graded work (completed work)
+                $completionRate = $totalClasswork > 0 ? round(($gradedCount / $totalClasswork) * 100, 2) : 0;
                 
                 return [
                     'id' => $student->id,
@@ -290,7 +621,7 @@ class CourseController extends Controller
                         'graded' => $gradedCount,
                         'pending' => $pendingCount,
                         'not_submitted' => $notSubmittedCount,
-                        'completion_rate' => $totalClasswork > 0 ? min(100, round(($submittedCount / $totalClasswork) * 100, 2)) : 0,
+                        'completion_rate' => min(100, $completionRate),
                         'average_grade' => $averageGrade,
                     ],
                 ];
