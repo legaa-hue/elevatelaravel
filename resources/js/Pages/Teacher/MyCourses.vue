@@ -207,8 +207,10 @@ const deleteCourse = (courseId) => {
                             <span 
                                 class="px-2 py-1 text-xs font-semibold rounded-full"
                                 :class="{
-                                    'bg-green-100 text-green-800': course.status === 'active',
-                                    'bg-red-100 text-red-800': course.status === 'archived'
+                                    'bg-yellow-100 text-yellow-800': course.status === 'Pending',
+                                    'bg-green-100 text-green-800': course.status === 'Active',
+                                    'bg-red-100 text-red-800': course.status === 'Archived',
+                                    'bg-gray-100 text-gray-800': course.status === 'Inactive'
                                 }"
                             >
                                 {{ course.status }}

@@ -261,6 +261,24 @@ class CoursesController extends Controller
             ->with('success', 'Course archived successfully.');
     }
 
+    public function approve(Course $course)
+    {
+        $course->update(['status' => 'Active']);
+
+        // Log action
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'approve',
+            'description' => 'Admin approved course: ' . $course->title,
+            'model_type' => 'Course',
+            'model_id' => $course->id,
+            'ip_address' => request()->ip(),
+        ]);
+
+        return redirect()->route('admin.courses.index')
+            ->with('success', 'Course approved successfully.');
+    }
+
     public function restore($id)
     {
         $course = Course::findOrFail($id);

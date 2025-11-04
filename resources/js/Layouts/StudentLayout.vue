@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
-import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
+// import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue'; // Disabled for debugging
 
 const page = usePage();
 // Toast notification for email verification
@@ -301,7 +301,7 @@ onUnmounted(() => {
 
 <template>
     <!-- Install PWA Prompt -->
-    <InstallPWAPrompt />
+    <!-- <InstallPWAPrompt /> -->
     
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile Sidebar Overlay -->
@@ -515,7 +515,8 @@ onUnmounted(() => {
                         </button>
 
                         <!-- Install App Button (YouTube-style) -->
-                        <!-- Always visible for easy access to installation options -->
+                        <!-- Removed for cleaner UI - Users can install via browser menu -->
+                        <!--
                         <button
                             @click="handleInstallClick"
                             class="flex items-center gap-2 px-3 py-2 bg-white border-2 border-red-900 text-red-900 hover:bg-red-50 rounded-lg font-medium transition shadow-sm"
@@ -526,6 +527,7 @@ onUnmounted(() => {
                             </svg>
                             <span class="hidden md:inline font-semibold">Install</span>
                         </button>
+                        -->
 
                         <!-- Notification Icon -->
                         <div class="relative">

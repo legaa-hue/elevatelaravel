@@ -103,6 +103,10 @@ class CourseController extends Controller
             'last_accessed_at' => now(),
         ]);
 
+        // Check grade access status
+        $gradeAccessGranted = $joinedCourse->grade_access_granted;
+        $gradeAccessRequested = $joinedCourse->grade_access_requested;
+
         $course = Course::with(['user:id,first_name,last_name,email,profile_picture', 'teachers:id,first_name,last_name,email,profile_picture'])
             ->findOrFail($id);
 
@@ -651,6 +655,10 @@ class CourseController extends Controller
                 'join_code' => $course->join_code,
                 'teacher_name' => $course->user->first_name . ' ' . $course->user->last_name,
             ],
+            'gradeAccess' => [
+                'granted' => $gradeAccessGranted,
+                'requested' => $gradeAccessRequested,
+            ],
             'courseGrades' => $courseGrades,
             'classworks' => $classworks,
             'pendingClassworks' => $pendingClassworks,
@@ -659,6 +667,25 @@ class CourseController extends Controller
             'classmates' => $classmates,
             'instructors' => $instructors,
         ]);
+    }
+
+    public function requestGradeAccess($courseId)
+    {
+        $joinedCourse = JoinedCourse::where('user_id', auth()->id())
+            ->where('course_id', $courseId)
+            ->where('role', 'Student')
+            ->firstOrFail();
+
+        // Update to request access
+        $joinedCourse->update([
+            'grade_access_requested' => true,
+            'grade_access_requested_at' => now(),
+        ]);
+
+        // TODO: Notify teacher about the request
+        // NotificationService::notifyTeacherAboutGradeAccessRequest($course, auth()->user());
+
+        return back()->with('success', 'Grade access request sent to your teacher.');
     }
 
     public function submitClasswork(Request $request, $classworkId)

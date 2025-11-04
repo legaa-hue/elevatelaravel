@@ -126,6 +126,10 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::delete('/courses/{course}', [\App\Http\Controllers\Teacher\CourseController::class, 'destroy'])->name('courses.destroy');
     Route::delete('/courses/{course}/leave', [\App\Http\Controllers\Teacher\CourseController::class, 'leave'])->name('courses.leave');
     
+    // Grade Access Management
+    Route::post('/courses/{course}/students/{student}/grant-grade-access', [\App\Http\Controllers\Teacher\CourseController::class, 'grantGradeAccess'])->name('courses.grant-grade-access');
+    Route::post('/courses/{course}/students/{student}/revoke-grade-access', [\App\Http\Controllers\Teacher\CourseController::class, 'revokeGradeAccess'])->name('courses.revoke-grade-access');
+    
     // Classwork Management
     Route::get('/courses/{course}/classwork', [\App\Http\Controllers\Teacher\ClassworkController::class, 'index'])->name('courses.classwork.index');
     Route::post('/courses/{course}/classwork', [\App\Http\Controllers\Teacher\ClassworkController::class, 'store'])->name('courses.classwork.store');
@@ -140,6 +144,11 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'save'])->name('courses.gradebook.save');
     Route::get('/courses/{course}/gradebook/load', [\App\Http\Controllers\Teacher\GradebookController::class, 'load'])->name('courses.gradebook.load');
     Route::get('/courses/{course}/graded-submissions', [\App\Http\Controllers\Teacher\CourseViewController::class, 'getGradedSubmissions'])->name('courses.graded-submissions');
+    
+    // Export Routes
+    Route::get('/courses/{course}/export-final-grades', [\App\Http\Controllers\Teacher\GradeSheetController::class, 'downloadPdf'])->name('courses.export-final-grades');
+    Route::get('/courses/{course}/export-course-performance', [\App\Http\Controllers\Teacher\ReportController::class, 'exportPerformancePdf'])->name('courses.export-course-performance');
+    Route::get('/courses/{course}/export-class-standings', [\App\Http\Controllers\Teacher\ReportController::class, 'exportStandingsPdf'])->name('courses.export-class-standings');
     
     // Class Record for specific course
     Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');
@@ -192,6 +201,9 @@ Route::middleware(['auth', 'verified', 'student'])->prefix('student')->name('stu
     Route::get('/courses/{id}', [\App\Http\Controllers\Student\CourseController::class, 'show'])->name('courses.show');
     Route::post('/classwork/{classwork}/submit', [\App\Http\Controllers\Student\CourseController::class, 'submitClasswork'])->name('classwork.submit');
     Route::delete('/classwork/{classwork}/unsubmit', [\App\Http\Controllers\Student\CourseController::class, 'unsubmitClasswork'])->name('classwork.unsubmit');
+    
+    // Grade Access Request
+    Route::post('/courses/{course}/request-grade-access', [\App\Http\Controllers\Student\CourseController::class, 'requestGradeAccess'])->name('courses.request-grade-access');
     
     // Calendar
     Route::get('/calendar', [\App\Http\Controllers\Student\CalendarController::class, 'index'])->name('calendar');

@@ -175,6 +175,9 @@ class CourseViewController extends Controller
                         'profile_picture' => $student->profile_picture,
                         'program' => $course->program ? $course->program->name : 'N/A',
                         'joined_at' => $pivot ? $pivot->created_at->format('M d, Y') : null,
+                        'grade_access_requested' => $pivot ? $pivot->grade_access_requested : false,
+                        'grade_access_granted' => $pivot ? $pivot->grade_access_granted : false,
+                        'grade_access_requested_at' => $pivot && $pivot->grade_access_requested_at ? $pivot->grade_access_requested_at->format('M d, Y h:i A') : null,
                         'progress' => [
                             'total_classwork' => $totalClasswork,
                             'submitted' => $submittedCount,

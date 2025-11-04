@@ -1331,6 +1331,27 @@ watch(
     },
     { deep: true }
 );
+
+// Watch for midterm/finals percentage changes to auto-save
+watch(
+    () => midtermPercentage.value,
+    () => {
+        if (!isInitializing.value) {
+            console.log('[Gradebook] Midterm percentage changed, scheduling save...');
+            scheduleSave();
+        }
+    }
+);
+
+watch(
+    () => finalsPercentage.value,
+    () => {
+        if (!isInitializing.value) {
+            console.log('[Gradebook] Finals percentage changed, scheduling save...');
+            scheduleSave();
+        }
+    }
+);
 </script>
 
 <template>
@@ -1658,7 +1679,6 @@ watch(
                                             </button>
                                         </div>
                                     </th>
-                                    <th class="px-4 py-2 text-center text-sm font-semibold text-gray-700 border-b border-l">Total</th>
                                 </tr>
                                 <tr v-if="table.columns.some(col => col.subcolumns && col.subcolumns.length > 0)">
                                     <th class="px-4 py-2 border-b"></th>
@@ -1731,7 +1751,6 @@ watch(
                                         </th>
                                         <th v-if="!column.subcolumns || column.subcolumns.length === 0" class="border-b border-l"></th>
                                     </template>
-                                    <th class="px-4 py-2 border-b border-l"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1774,9 +1793,6 @@ watch(
                                             N/A
                                         </td>
                                     </template>
-                                    <td class="px-4 py-2 border-b border-l text-center font-semibold text-sm">
-                                        {{ calculateStudentTableTotal(student.id, 'midterm', tableKey) }}
-                                    </td>
                                 </tr>
                             </tbody>
                         </table>
@@ -1996,7 +2012,6 @@ watch(
                                             </button>
                                         </div>
                                     </th>
-                                    <th class="px-4 py-2 text-center text-sm font-semibold text-gray-700 border-b border-l">Total</th>
                                 </tr>
                                 <tr v-if="table.columns.some(col => col.subcolumns && col.subcolumns.length > 0)">
                                     <th class="px-4 py-2 border-b"></th>
@@ -2069,7 +2084,6 @@ watch(
                                         </th>
                                         <th v-if="!column.subcolumns || column.subcolumns.length === 0" class="border-b border-l"></th>
                                     </template>
-                                    <th class="px-4 py-2 border-b border-l"></th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -2113,9 +2127,6 @@ watch(
                                             N/A
                                         </td>
                                     </template>
-                                    <td class="px-4 py-2 border-b border-l text-center font-semibold text-sm">
-                                        {{ calculateStudentTableTotal(student.id, 'finals', tableKey) }}
-                                    </td>
                                 </tr>
                             </tbody>
                         </table>

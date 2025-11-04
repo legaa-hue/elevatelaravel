@@ -2,7 +2,7 @@
 import { ref, onMounted, computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
-import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
+// import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue'; // Disabled for debugging
 
 const sidebarOpen = ref(true);
 const showProfileDropdown = ref(false);
@@ -156,8 +156,8 @@ const isCurrentRoute = (routeName) => {
 </script>
 
 <template>
-    <!-- Install PWA Prompt -->
-    <InstallPWAPrompt />
+    <!-- Install PWA Prompt (Disabled for debugging) -->
+    <!-- <InstallPWAPrompt /> -->
     
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile overlay when sidebar open -->
