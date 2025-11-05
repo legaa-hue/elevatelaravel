@@ -1,7 +1,7 @@
 <script setup>
-import { Head, usePage } from '@inertiajs/vue3';
+import { Head, usePage, router } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useTeacherOffline } from '@/composables/useTeacherOffline';
 import { useOfflineSync } from '@/composables/useOfflineSync';
 
@@ -29,6 +29,8 @@ const user = computed(() => page.props.auth.user);
 
 // Offline support
 const { isOnline } = useOfflineSync();
+// Auto-refresh interval
+let refreshInterval = null;
 const { cacheDashboardData, getCachedDashboard } = useTeacherOffline();
 
 const dashboardData = ref({
@@ -56,6 +58,25 @@ onMounted(async () => {
             dashboardData.value = cached;
             isFromCache.value = true;
         }
+    }
+    
+    // Set up auto-refresh every 10 seconds to check for admin changes
+    refreshInterval = setInterval(() => {
+        // Only refresh if user is online
+        if (isOnline.value) {
+            router.reload({ 
+                only: ['stats', 'recentCourses', 'upcomingEvents', 'recentAnnouncements'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }
+    }, 10000); // Refresh every 10 seconds
+});
+
+onUnmounted(() => {
+    // Clean up the interval when component is destroyed
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
     }
 });
 

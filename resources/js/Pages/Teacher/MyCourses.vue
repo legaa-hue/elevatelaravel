@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import axios from 'axios';
@@ -31,6 +31,9 @@ const courseTemplates = ref([]);
 const loadingTemplates = ref(false);
 const isFromCache = ref(false);
 const localCourses = ref([...props.courses]);
+
+// Auto-refresh interval
+let refreshInterval = null;
 
 const formData = ref({
     academic_year_id: '',
@@ -126,8 +129,11 @@ const createCourse = async () => {
 
     // Online mode
     router.post(route('teacher.courses.store'), courseData, {
+        preserveScroll: true,
         onSuccess: () => {
             closeModal();
+            // Reload the page data to show the new course
+            router.reload({ only: ['courses'] });
         }
     });
 };
@@ -145,11 +151,36 @@ onMounted(async () => {
             isFromCache.value = true;
         }
     }
+    
+    // Set up auto-refresh every 10 seconds to check for admin changes
+    refreshInterval = setInterval(() => {
+        // Only refresh if user is online and not in a modal
+        if (isOnline.value && !showCreateModal.value) {
+            router.reload({ 
+                only: ['courses'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }
+    }, 10000); // Refresh every 10 seconds
+});
+
+onUnmounted(() => {
+    // Clean up the interval when component is destroyed
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
 });
 
 const deleteCourse = (courseId) => {
     if (confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
-        router.delete(route('teacher.courses.destroy', courseId));
+        router.delete(route('teacher.courses.destroy', courseId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to update the course list
+                router.reload({ only: ['courses'] });
+            }
+        });
     }
 };
 </script>

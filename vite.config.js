@@ -31,13 +31,16 @@ export default defineConfig({
             },
         }),
         VitePWA({
-            registerType: 'prompt',
-            injectRegister: 'auto',
+            registerType: 'autoUpdate',
+            injectRegister: false, // We'll register manually
             includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
             devOptions: {
-                enabled: true,
+                enabled: false,
                 type: 'module'
             },
+            // Output sw.js to public root instead of build folder
+            filename: 'sw.js',
+            strategies: 'generateSW',
             manifest: {
                 name: 'ElevateGS Learning Management System',
                 short_name: 'ElevateGS',
@@ -110,32 +113,105 @@ export default defineConfig({
                 ]
             },
             workbox: {
+                // ✅ CRITICAL: Cache ALL build assets including dynamic chunks
                 globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+                globDirectory: 'public/build',
+                // Don't restrict to build folder - cache from entire public directory
                 maximumFileSizeToCacheInBytes: 50 * 1024 * 1024, // 50MB
+                
+                // ✅ Add base path for assets
+                modifyURLPrefix: {
+                    '': '/build/'
+                },
+                
+                // ✅ CRITICAL: Enable navigation fallback for SPA routing
+                navigateFallback: null, // Disable for Laravel - it uses server-side routing
+                navigateFallbackDenylist: [/^\/api\//, /^\/storage\//],
+                cleanupOutdatedCaches: true,
+                
+                // ✅ CRITICAL: Skip waiting and claim clients immediately
+                skipWaiting: true,
+                clientsClaim: true,
                 runtimeCaching: [
-                    // API routes - Network first, fallback to cache
+                    // ✅ CRITICAL: Cache all JavaScript modules (including dynamic imports)
                     {
-                        urlPattern: /^.*\/api\/.*/i,
-                        handler: 'NetworkFirst',
+                        urlPattern: /\/build\/assets\/.*\.js$/i,
+                        handler: 'CacheFirst',
                         options: {
-                            cacheName: 'api-cache-v1',
-                            networkTimeoutSeconds: 10,
+                            cacheName: 'js-modules-cache-v1',
                             expiration: {
-                                maxEntries: 50,
-                                maxAgeSeconds: 5 * 60 // 5 minutes
+                                maxEntries: 200,
+                                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
                             },
                             cacheableResponse: {
                                 statuses: [0, 200]
                             }
                         }
                     },
-                    // Teacher dashboard data
+                    // ✅ CRITICAL: Cache all CSS files
                     {
-                        urlPattern: /^.*\/teacher\/(dashboard|courses|classwork|calendar).*/i,
+                        urlPattern: /\/build\/assets\/.*\.css$/i,
+                        handler: 'CacheFirst',
+                        options: {
+                            cacheName: 'css-cache-v1',
+                            expiration: {
+                                maxEntries: 100,
+                                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
+                            }
+                        }
+                    },
+                    // ✅ Handle Workbox runtime itself
+                    {
+                        urlPattern: /workbox-.*\.js$/i,
+                        handler: 'CacheFirst',
+                        options: {
+                            cacheName: 'workbox-runtime-v1',
+                            expiration: {
+                                maxEntries: 10,
+                                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                            }
+                        }
+                    },
+                    // Navigation requests - Use StaleWhileRevalidate for instant loading
+                    {
+                        urlPattern: /^\/(teacher|student|admin)\/.*/i,
+                        handler: 'StaleWhileRevalidate',
+                        options: {
+                            cacheName: 'pages-cache-v2',
+                            expiration: {
+                                maxEntries: 100,
+                                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
+                            }
+                        }
+                    },
+                    // Catch-all for HTML pages
+                    {
+                        urlPattern: /.*\.html$/i,
+                        handler: 'StaleWhileRevalidate',
+                        options: {
+                            cacheName: 'html-cache-v1',
+                            expiration: {
+                                maxEntries: 50,
+                                maxAgeSeconds: 60 * 60 * 24 // 24 hours
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
+                            }
+                        }
+                    },
+                    // API routes - Network first with short timeout, fallback to cache
+                    {
+                        urlPattern: /\/api\/.*/i,
                         handler: 'NetworkFirst',
                         options: {
-                            cacheName: 'teacher-data-cache-v1',
-                            networkTimeoutSeconds: 10,
+                            cacheName: 'api-cache-v2',
+                            networkTimeoutSeconds: 5,
                             expiration: {
                                 maxEntries: 100,
                                 maxAgeSeconds: 10 * 60 // 10 minutes
@@ -160,7 +236,30 @@ export default defineConfig({
                             }
                         }
                     },
-                    // Submission files
+                    // ✅ AGGRESSIVE: All storage files (auto-download for offline viewing)
+                    {
+                        urlPattern: /^.*\/storage\/.*/i,
+                        handler: 'CacheFirst',
+                        options: {
+                            cacheName: 'all-storage-files-v3',
+                            expiration: {
+                                maxEntries: 500, // Increased for more files
+                                maxAgeSeconds: 60 * 60 * 24 * 60 // 60 days
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
+                            },
+                            plugins: [
+                                {
+                                    cacheWillUpdate: async ({ response }) => {
+                                        // Only cache successful responses
+                                        return response.status === 200 ? response : null;
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    // Submission files (legacy - kept for compatibility)
                     {
                         urlPattern: /^.*\/storage\/submissions\/.*/i,
                         handler: 'CacheFirst',
@@ -175,52 +274,48 @@ export default defineConfig({
                             }
                         }
                     },
-                    // File attachments (documents, images, etc.)
+                    // File attachments - PDF, Office docs, archives (aggressive caching)
                     {
-                        urlPattern: /^.*\/storage\/.*\.(pdf|jpg|jpeg|png|gif|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar|7z)$/i,
+                        urlPattern: /\.(pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar|7z|csv|odt|ods|odp)$/i,
                         handler: 'CacheFirst',
                         options: {
-                            cacheName: 'file-attachments-cache-v2',
+                            cacheName: 'document-files-v3',
                             expiration: {
-                                maxEntries: 300,
-                                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
-                            },
-                            cacheableResponse: {
-                                statuses: [0, 200]
-                            },
-                            plugins: [
-                                {
-                                    cacheWillUpdate: async ({ response }) => {
-                                        return response.status === 200 ? response : null;
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    // Images
-                    {
-                        urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
-                        handler: 'CacheFirst',
-                        options: {
-                            cacheName: 'images-cache-v1',
-                            expiration: {
-                                maxEntries: 200,
-                                maxAgeSeconds: 60 * 60 * 24 * 30
+                                maxEntries: 400,
+                                maxAgeSeconds: 60 * 60 * 24 * 90 // 90 days - keep documents longer
                             },
                             cacheableResponse: {
                                 statuses: [0, 200]
                             }
                         }
                     },
-                    // Static assets
+                    // Images (aggressive caching for offline viewing)
                     {
-                        urlPattern: /\.(?:js|css|woff|woff2|ttf|eot)$/i,
-                        handler: 'StaleWhileRevalidate',
+                        urlPattern: /\.(png|jpg|jpeg|svg|gif|webp|ico|bmp|tiff|tif|avif)$/i,
+                        handler: 'CacheFirst',
                         options: {
-                            cacheName: 'static-assets-cache-v1',
+                            cacheName: 'images-cache-v2',
                             expiration: {
-                                maxEntries: 100,
-                                maxAgeSeconds: 60 * 60 * 24 * 7 // 7 days
+                                maxEntries: 300, // Increased capacity
+                                maxAgeSeconds: 60 * 60 * 24 * 60 // 60 days
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
+                            }
+                        }
+                    },
+                    // Static assets (CSS, JS, Fonts)
+                    {
+                        urlPattern: /\.(js|css|woff|woff2|ttf|eot|otf)$/i,
+                        handler: 'CacheFirst', // Changed from StaleWhileRevalidate to CacheFirst for better offline
+                        options: {
+                            cacheName: 'static-assets-cache-v2',
+                            expiration: {
+                                maxEntries: 150,
+                                maxAgeSeconds: 60 * 60 * 24 * 30 // 30 days
+                            },
+                            cacheableResponse: {
+                                statuses: [0, 200]
                             }
                         }
                     }

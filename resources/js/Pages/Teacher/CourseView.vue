@@ -179,45 +179,73 @@ const availableGradingPeriods = computed(() => {
 const availableGradeTables = computed(() => {
     if (!classworkForm.grading_period) return [];
     
-    // If gradebook doesn't exist yet, return default tables
-    if (!props.course?.gradebook) {
-        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
-        return [
-            { value: 'Asynchronous', label: 'Asynchronous' },
-            { value: 'Synchronous', label: 'Synchronous' },
-            { value: examName, label: examName }
-            // Note: Summary table is excluded as it's read-only
-        ];
+    // Always start with default tables
+    const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+    const defaultTables = [
+        { value: 'Asynchronous', label: 'Asynchronous' },
+        { value: 'Synchronous', label: 'Synchronous' },
+        { value: examName, label: examName }
+    ];
+    
+    // Check both the reactive gradebook ref and the props
+    const gradebookData = gradebook.value || props.course?.gradebook;
+    
+    // If gradebook doesn't exist yet, return default tables only
+    if (!gradebookData) {
+        return defaultTables;
     }
     
-    const periodData = props.course.gradebook[classworkForm.grading_period];
+    const periodData = gradebookData[classworkForm.grading_period];
     if (!periodData || !periodData.tables) {
-        // Fallback to default tables if period data doesn't exist
-        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
-        return [
-            { value: 'Asynchronous', label: 'Asynchronous' },
-            { value: 'Synchronous', label: 'Synchronous' },
-            { value: examName, label: examName }
-        ];
+        return defaultTables;
     }
     
-    return periodData.tables
-        .filter(table => !table.isSummary) // Filter out Summary table
+    // Get custom tables (exclude Summary table)
+    const customTables = periodData.tables
+        .filter(table => !table.isSummary && !['Asynchronous', 'Synchronous', examName].includes(table.name))
         .map(table => ({
             value: table.name,
             label: table.name
         }));
+    
+    // Combine default tables with custom tables
+    return [...defaultTables, ...customTables];
 });
 
 // Get available main columns for selected grade table
 const availableMainColumns = computed(() => {
-    if (!classworkForm.grading_period || !classworkForm.grade_table_name || !props.course?.gradebook) return [];
-    const periodData = props.course.gradebook[classworkForm.grading_period];
-    if (!periodData || !periodData.tables) return [];
+    if (!classworkForm.grading_period || !classworkForm.grade_table_name) return [];
     
+    // Check both the reactive gradebook ref and the props
+    const gradebookData = gradebook.value || props.course?.gradebook;
+    
+    // If no gradebook data exists, return empty (user needs to create columns in gradebook first)
+    if (!gradebookData) {
+        console.log('No gradebook data available');
+        return [];
+    }
+    
+    const periodData = gradebookData[classworkForm.grading_period];
+    if (!periodData || !periodData.tables) {
+        console.log('No period data or tables');
+        return [];
+    }
+    
+    // Find the selected table in the gradebook
     const table = periodData.tables.find(t => t.name === classworkForm.grade_table_name);
-    if (!table || !table.columns) return [];
     
+    if (!table) {
+        console.log('Table not found:', classworkForm.grade_table_name);
+        console.log('Available tables:', periodData.tables.map(t => t.name));
+        return [];
+    }
+    
+    if (!table.columns || table.columns.length === 0) {
+        console.log('No columns in table:', classworkForm.grade_table_name);
+        return [];
+    }
+    
+    console.log('Found columns for table:', classworkForm.grade_table_name, table.columns);
     return table.columns.map(col => ({
         value: col.name,
         label: col.name
@@ -286,7 +314,8 @@ const grantAccess = (studentId) => {
     router.post(route('teacher.courses.grant-grade-access', { course: props.course.id, student: studentId }), {}, {
         preserveScroll: true,
         onSuccess: () => {
-            // Page will reload with updated student data
+            // Reload the page data to show updated student data
+            router.reload({ only: ['students'] });
         }
     });
 };
@@ -296,7 +325,8 @@ const revokeAccess = (studentId) => {
         router.post(route('teacher.courses.revoke-grade-access', { course: props.course.id, student: studentId }), {}, {
             preserveScroll: true,
             onSuccess: () => {
-                // Page will reload with updated student data
+                // Reload the page data to show updated student data
+                router.reload({ only: ['students'] });
             }
         });
     }
@@ -307,7 +337,8 @@ const denyRequest = (studentId) => {
         router.post(route('teacher.courses.revoke-grade-access', { course: props.course.id, student: studentId }), {}, {
             preserveScroll: true,
             onSuccess: () => {
-                // Page will reload with updated student data
+                // Reload the page data to show updated student data
+                router.reload({ only: ['students'] });
             }
         });
     }
@@ -359,6 +390,8 @@ const deleteClasswork = () => {
         onSuccess: () => {
             showDeleteConfirm.value = false;
             classworkToDelete.value = null;
+            // Reload the page data to remove deleted classwork
+            router.reload({ only: ['classworks'] });
         },
     });
 };
@@ -529,6 +562,8 @@ const submitClasswork = () => {
             onSuccess: () => {
                 closeClassworkModal();
                 alert('Classwork updated successfully!');
+                // Reload the page data to show updated classwork
+                router.reload({ only: ['classworks'] });
             },
             onError: (errors) => {
                 console.error('Failed to update classwork:', errors);
@@ -556,14 +591,21 @@ const submitClasswork = () => {
                 const typeName = classworkForm.type.charAt(0).toUpperCase() + classworkForm.type.slice(1);
                 closeClassworkModal();
                 alert(`${typeName} created successfully!`);
+                // Reload the page data to show new classwork
+                router.reload({ only: ['classworks'] });
             },
             onError: (errors) => {
                 console.error('Failed to create classwork:', errors);
+                console.error('Full error object:', JSON.stringify(errors, null, 2));
                 // Show error message to user
-                let errorMessage = 'Failed to create classwork:\n';
+                let errorMessage = 'Failed to create classwork:\n\n';
                 if (typeof errors === 'object') {
                     Object.keys(errors).forEach(key => {
-                        errorMessage += `${key}: ${errors[key]}\n`;
+                        if (Array.isArray(errors[key])) {
+                            errorMessage += `${key}: ${errors[key].join(', ')}\n`;
+                        } else {
+                            errorMessage += `${key}: ${errors[key]}\n`;
+                        }
                     });
                 } else {
                     errorMessage += errors;
@@ -748,10 +790,10 @@ const isOfficeDocument = (filename) => {
 };
 
 const getOfficeViewerUrl = (fileUrl) => {
-    // Use Microsoft Office Online Viewer for better compatibility
+    // Use Google Docs Viewer as it works better with local files
     // Need to convert relative URL to absolute URL
     const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
+    return `https://docs.google.com/gview?url=${encodeURIComponent(absoluteUrl)}&embedded=true`;
 };
 
 // Class Record Helper Functions
@@ -1446,8 +1488,8 @@ const exportClassStandings = () => {
                             :course="course"
                             :students="students"
                             :classworks="classworks"
-                            :gradebook="gradebook"
-                            @gradebook-updated="(updatedGradebook) => gradebook = updatedGradebook"
+                            :gradebook="gradebook.value"
+                            @gradebook-updated="(updatedGradebook) => gradebook.value = updatedGradebook"
                         />
                     </div>
 

@@ -1,5 +1,6 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
+import PWAInstallPrompt from '@/Components/PWAInstallPrompt.vue';
 
 defineProps({
     canLogin: {
@@ -28,6 +29,10 @@ function handleImageError() {
 
 <template>
     <Head title="Welcome" />
+    
+    <!-- PWA Install Prompt -->
+    <PWAInstallPrompt />
+    
     <div class="bg-gray-50 text-black/50 dark:bg-black dark:text-white/50">
         <img
             id="background"

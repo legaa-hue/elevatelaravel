@@ -341,6 +341,8 @@ async function saveEvent() {
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to show updated event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;
@@ -353,6 +355,8 @@ async function saveEvent() {
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to show new event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;
@@ -371,6 +375,8 @@ function deleteEvent(eventId) {
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to remove deleted event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;

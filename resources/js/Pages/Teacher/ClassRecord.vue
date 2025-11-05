@@ -1,6 +1,6 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import { useOfflineSync } from '@/composables/useOfflineSync';
 import { useTeacherOffline } from '@/composables/useTeacherOffline';
@@ -19,6 +19,9 @@ const { downloadFile, getCachedFile } = useOfflineFiles();
 const localMyCourses = ref([...props.myCourses]);
 const localJoinedCourses = ref([...props.joinedCourses]);
 const isFromCache = ref(false);
+
+// Auto-refresh interval
+let refreshInterval = null;
 
 // Merge and de-dupe courses by id
 const allCourses = computed(() => {
@@ -83,6 +86,25 @@ onMounted(async () => {
       localJoinedCourses.value = cached.filter(c => !c.is_owner);
       isFromCache.value = true;
     }
+  }
+  
+  // Set up auto-refresh every 10 seconds to check for admin changes
+  refreshInterval = setInterval(() => {
+    // Only refresh if user is online and modal is not open
+    if (isOnline.value && !showPdfModal.value) {
+      router.reload({ 
+        only: ['myCourses', 'joinedCourses'],
+        preserveScroll: true,
+        preserveState: true,
+      });
+    }
+  }, 10000); // Refresh every 10 seconds
+});
+
+onUnmounted(() => {
+  // Clean up the interval when component is destroyed
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
   }
 });
 </script>

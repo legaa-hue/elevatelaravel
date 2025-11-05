@@ -2,23 +2,37 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Notification;
 use Illuminate\Http\Request;
+use App\Models\Notification;
 
 class NotificationController extends Controller
 {
     /**
-     * Get user notifications
+     * Get user notifications (using custom notifications table)
      */
     public function index(Request $request)
     {
-        $notifications = Notification::where('user_id', auth()->id())
+        $user = auth()->user();
+        
+        $notifications = Notification::where('user_id', $user->id)
             ->orderBy('created_at', 'desc')
             ->limit(50)
-            ->get();
+            ->get()
+            ->map(function($notification) {
+                return [
+                    'id' => $notification->id,
+                    'type' => $notification->type,
+                    'title' => $notification->title,
+                    'message' => $notification->message,
+                    'data' => $notification->data,
+                    'is_read' => $notification->is_read,
+                    'read_at' => $notification->read_at,
+                    'created_at' => $notification->created_at,
+                ];
+            });
 
-        $unreadCount = Notification::where('user_id', auth()->id())
-            ->unread()
+        $unreadCount = Notification::where('user_id', $user->id)
+            ->where('is_read', false)
             ->count();
 
         return response()->json([
@@ -33,7 +47,7 @@ class NotificationController extends Controller
     public function unreadCount()
     {
         $count = Notification::where('user_id', auth()->id())
-            ->unread()
+            ->where('is_read', false)
             ->count();
 
         return response()->json(['count' => $count]);
@@ -45,7 +59,8 @@ class NotificationController extends Controller
     public function markAsRead($id)
     {
         $notification = Notification::where('user_id', auth()->id())
-            ->findOrFail($id);
+            ->where('id', $id)
+            ->firstOrFail();
 
         $notification->markAsRead();
 
@@ -58,10 +73,10 @@ class NotificationController extends Controller
     public function markAllAsRead()
     {
         Notification::where('user_id', auth()->id())
-            ->unread()
+            ->where('is_read', false)
             ->update([
                 'is_read' => true,
-                'read_at' => now(),
+                'read_at' => now()
             ]);
 
         return response()->json(['message' => 'All notifications marked as read']);
@@ -73,7 +88,8 @@ class NotificationController extends Controller
     public function destroy($id)
     {
         $notification = Notification::where('user_id', auth()->id())
-            ->findOrFail($id);
+            ->where('id', $id)
+            ->firstOrFail();
 
         $notification->delete();
 

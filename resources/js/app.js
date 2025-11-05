@@ -7,6 +7,7 @@ import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
 import offlineStorage from './offline-storage';
 import authService from './auth-service';
+import offlineSync from './offline-sync';
 
 const appName = import.meta.env.VITE_APP_NAME || 'Laravel';
 
@@ -42,26 +43,62 @@ authService.validateToken().then(valid => {
     }
 });
 
-// Register PWA Service Worker
-import { registerSW } from 'virtual:pwa-register';
-
-const updateSW = registerSW({
-    onNeedRefresh() {
-        console.log('🔄 New content available, please refresh.');
-        // Optionally show a prompt to user
-        if (confirm('New version available! Reload to update?')) {
-            updateSW(true);
-        }
-    },
-    onOfflineReady() {
-        console.log('✅ App ready to work offline');
-    },
-    onRegistered(registration) {
-        console.log('✅ Service Worker registered');
-        
-        // Check for updates every hour
-        setInterval(() => {
-            registration.update();
-        }, 60 * 60 * 1000);
-    },
+// Initialize Offline Sync System
+offlineSync.init().then(() => {
+    console.log('✅ Offline sync initialized');
+    
+    // Try to sync on startup if online
+    if (navigator.onLine) {
+        offlineSync.syncAll();
+    }
+}).catch(err => {
+    console.error('❌ Offline sync initialization failed:', err);
 });
+
+// Register PWA Service Worker manually
+console.log('🔧 Attempting to register Service Worker...');
+
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', async () => {
+        try {
+            console.log('🔧 Window loaded, registering SW from /sw.js');
+            const registration = await navigator.serviceWorker.register('/sw.js', {
+                scope: '/'
+            });
+            
+            console.log('✅ Service Worker registered:', registration);
+            console.log('✅ SW scope:', registration.scope);
+            console.log('✅ SW active:', registration.active);
+            console.log('✅ SW installing:', registration.installing);
+            console.log('✅ SW waiting:', registration.waiting);
+            
+            window.swRegistration = registration;
+            
+            // Handle updates
+            registration.addEventListener('updatefound', () => {
+                const newWorker = registration.installing;
+                console.log('🔄 New Service Worker found');
+                
+                newWorker.addEventListener('statechange', () => {
+                    console.log('SW state changed to:', newWorker.state);
+                    if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                        console.log('🔄 New content available, please refresh');
+                        if (confirm('New version available! Reload to update?')) {
+                            window.location.reload();
+                        }
+                    }
+                });
+            });
+            
+            // Check for updates every hour
+            setInterval(() => {
+                registration.update();
+            }, 60 * 60 * 1000);
+            
+        } catch (error) {
+            console.error('❌ Service Worker registration failed:', error);
+        }
+    });
+} else {
+    console.warn('⚠️ Service Workers not supported in this browser');
+}

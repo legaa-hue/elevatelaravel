@@ -362,6 +362,8 @@ const approveCourse = (courseId) => {
             preserveScroll: true,
             onSuccess: () => {
                 console.log('Course approved successfully');
+                // Reload the page data to update course status
+                router.reload({ only: ['courses', 'metrics', 'courseStats'] });
             }
         });
     }
@@ -373,6 +375,8 @@ const rejectCourse = (courseId) => {
             preserveScroll: true,
             onSuccess: () => {
                 console.log('Course rejected successfully');
+                // Reload the page data to update course status
+                router.reload({ only: ['courses', 'metrics', 'courseStats'] });
             }
         });
     }
@@ -384,6 +388,25 @@ const archiveCourse = (courseId) => {
             preserveScroll: true,
             onSuccess: () => {
                 console.log('Course archived successfully');
+                // Reload the page data to update course status
+                router.reload({ only: ['courses', 'metrics', 'courseStats'] });
+            }
+        });
+    }
+};
+
+const deleteCourse = (courseId) => {
+    if (confirm('Are you sure you want to permanently delete this course? This action cannot be undone.')) {
+        router.delete(route('admin.courses.destroy', courseId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                console.log('Course deleted successfully');
+                // Reload the page data to remove deleted course
+                router.reload({ only: ['courses', 'metrics', 'courseStats'] });
+            },
+            onError: (errors) => {
+                console.error('Error deleting course:', errors);
+                alert('Failed to delete course. Please try again.');
             }
         });
     }

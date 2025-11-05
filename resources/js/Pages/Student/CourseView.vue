@@ -221,10 +221,10 @@ const isOfficeDocument = (filename) => {
 };
 
 const getOfficeViewerUrl = (fileUrl) => {
-    // Use Microsoft Office Online Viewer for better compatibility
+    // Use Google Docs Viewer as it works better with local files
     // Need to convert relative URL to absolute URL
     const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
+    return `https://docs.google.com/gview?url=${encodeURIComponent(absoluteUrl)}&embedded=true`;
 };
 
 const handleFileUpload = (event) => {

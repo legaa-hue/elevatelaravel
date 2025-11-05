@@ -103,6 +103,8 @@ const submitCreate = () => {
         preserveScroll: true,
         onSuccess: () => {
             showCreateModal.value = false;
+            // Reload the page data to show the new course
+            router.reload({ only: ['courses', 'summary'] });
         },
     });
 };
@@ -112,6 +114,8 @@ const submitEdit = () => {
         preserveScroll: true,
         onSuccess: () => {
             showEditModal.value = false;
+            // Reload the page data to show updated course
+            router.reload({ only: ['courses', 'summary'] });
         },
     });
 };
@@ -120,6 +124,10 @@ const archiveCourse = (courseId) => {
     if (confirm('Are you sure you want to archive this course?')) {
         router.post(route('admin.courses.archive', courseId), {}, {
             preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to update course status
+                router.reload({ only: ['courses', 'summary'] });
+            }
         });
     }
 };
@@ -128,6 +136,10 @@ const restoreCourse = (courseId) => {
     if (confirm('Are you sure you want to restore this course?')) {
         router.post(route('admin.courses.restore', courseId), {}, {
             preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to update course status
+                router.reload({ only: ['courses', 'summary'] });
+            }
         });
     }
 };
@@ -136,6 +148,10 @@ const deleteCourse = (courseId) => {
     if (confirm('Are you sure you want to permanently delete this course? This action cannot be undone.')) {
         router.delete(route('admin.courses.destroy', courseId), {
             preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to remove deleted course
+                router.reload({ only: ['courses', 'summary'] });
+            }
         });
     }
 };

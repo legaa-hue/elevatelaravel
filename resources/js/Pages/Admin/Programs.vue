@@ -61,8 +61,11 @@ const saveProgram = () => {
             description: formData.value.description,
             status: formData.value.status
         }, {
+            preserveScroll: true,
             onSuccess: () => {
                 closeModal();
+                // Reload the page data to show updated program
+                router.reload({ only: ['programs'] });
             }
         });
     } else {
@@ -71,8 +74,11 @@ const saveProgram = () => {
             description: formData.value.description,
             status: formData.value.status
         }, {
+            preserveScroll: true,
             onSuccess: () => {
                 closeModal();
+                // Reload the page data to show new program
+                router.reload({ only: ['programs'] });
             }
         });
     }
@@ -86,9 +92,12 @@ const confirmDelete = (program) => {
 const deleteProgram = () => {
     if (programToDelete.value) {
         router.delete(route('admin.programs.destroy', programToDelete.value.id), {
+            preserveScroll: true,
             onSuccess: () => {
                 showDeleteConfirm.value = false;
                 programToDelete.value = null;
+                // Reload the page data to remove deleted program
+                router.reload({ only: ['programs'] });
             }
         });
     }

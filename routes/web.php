@@ -9,6 +9,11 @@ Route::get('/', function () {
     return Inertia::render('Landing');
 });
 
+// PWA Status Check Page (for debugging)
+Route::get('/pwa-status', function () {
+    return Inertia::render('PWAStatus');
+})->name('pwa.status');
+
 Route::get('/dashboard', function () {
     $user = auth()->user();
     
@@ -40,6 +45,13 @@ Route::middleware('auth')->group(function () {
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Admin\DashboardController::class, 'index'])->name('dashboard');
     
+    // Notification routes
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/{notification}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    
     // Calendar and Events
     Route::get('/calendar', [\App\Http\Controllers\Admin\EventController::class, 'index'])->name('calendar');
     Route::post('/events', [\App\Http\Controllers\Admin\EventController::class, 'store'])->name('events.store');
@@ -65,10 +77,6 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::post('/courses/{course}/archive', [\App\Http\Controllers\Admin\CoursesController::class, 'archive'])->name('courses.archive');
     Route::post('/courses/{course}/restore', [\App\Http\Controllers\Admin\CoursesController::class, 'restore'])->name('courses.restore');
     
-    // Course Approval (existing)
-    Route::post('/courses/{course}/approve', [CourseApprovalController::class, 'approve']);
-    Route::post('/courses/{course}/reject', [CourseApprovalController::class, 'reject']);
-    
     // User Management
     Route::get('/users', [\App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users');
     Route::post('/users', [\App\Http\Controllers\Admin\UserManagementController::class, 'store'])->name('users.store');
@@ -85,10 +93,6 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::patch('/academic-year/{academicYear}/status', [\App\Http\Controllers\Admin\AcademicYearController::class, 'updateStatus'])->name('academic-year.updateStatus');
     Route::delete('/academic-year/{academicYear}', [\App\Http\Controllers\Admin\AcademicYearController::class, 'destroy'])->name('academic-year.destroy');
     Route::get('/academic-year/{academicYear}/download', [\App\Http\Controllers\Admin\AcademicYearController::class, 'download'])->name('academic-year.download');
-    
-    // Reports
-    Route::get('/reports', [\App\Http\Controllers\Admin\ReportController::class, 'index'])->name('reports');
-    Route::get('/reports/fetch', [\App\Http\Controllers\Admin\ReportController::class, 'fetch'])->name('reports.fetch');
     
     // Programs and Course Templates
     Route::get('/programs', [\App\Http\Controllers\Admin\ProgramController::class, 'index'])->name('programs.index');
@@ -112,6 +116,13 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
 // Teacher Routes
 Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('teacher.')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Teacher\DashboardController::class, 'index'])->name('dashboard');
+    
+    // Notification routes
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/{notification}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
     
     // Programs and Course Templates for Teachers
     Route::get('/programs/list', [\App\Http\Controllers\Admin\ProgramController::class, 'getPrograms'])->name('programs.list');

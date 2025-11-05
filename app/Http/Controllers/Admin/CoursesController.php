@@ -239,7 +239,7 @@ class CoursesController extends Controller
 
         $course->delete();
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course deleted successfully.');
     }
 
@@ -257,7 +257,7 @@ class CoursesController extends Controller
             'ip_address' => request()->ip(),
         ]);
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course archived successfully.');
     }
 
@@ -275,7 +275,7 @@ class CoursesController extends Controller
             'ip_address' => request()->ip(),
         ]);
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course approved successfully.');
     }
 
@@ -294,7 +294,7 @@ class CoursesController extends Controller
             'ip_address' => request()->ip(),
         ]);
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course restored successfully.');
     }
 

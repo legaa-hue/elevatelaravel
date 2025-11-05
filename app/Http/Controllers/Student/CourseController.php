@@ -671,6 +671,8 @@ class CourseController extends Controller
 
     public function requestGradeAccess($courseId)
     {
+        $course = Course::findOrFail($courseId);
+        
         $joinedCourse = JoinedCourse::where('user_id', auth()->id())
             ->where('course_id', $courseId)
             ->where('role', 'Student')
@@ -682,8 +684,14 @@ class CourseController extends Controller
             'grade_access_requested_at' => now(),
         ]);
 
-        // TODO: Notify teacher about the request
-        // NotificationService::notifyTeacherAboutGradeAccessRequest($course, auth()->user());
+        // Notify the teacher
+        $teacher = $course->teacher;
+        if ($teacher) {
+            $teacher->notify(new \App\Notifications\GradeAccessRequestNotification(
+                auth()->user(),
+                $course
+            ));
+        }
 
         return back()->with('success', 'Grade access request sent to your teacher.');
     }
@@ -721,11 +729,8 @@ class CourseController extends Controller
         // Handle file uploads with more lenient validation
         $uploadedFiles = [];
         
-        // Get existing attachments if updating
-        if ($existingSubmission && $existingSubmission->attachments) {
-            $uploadedFiles = $existingSubmission->attachments;
-        }
-        
+        // When resubmitting, replace files instead of adding to them
+        // Only keep existing files if no new files are uploaded
         if ($request->hasFile('attachments')) {
             try {
                 // Validate files separately for better error messages
@@ -738,7 +743,7 @@ class CourseController extends Controller
                     'attachments.*.max' => 'File size must not exceed 20MB.',
                 ]);
                 
-                // Add new files to existing attachments
+                // Replace with new files (not add to existing)
                 foreach ($request->file('attachments') as $file) {
                     if ($file->isValid()) {
                         $path = $file->store('submissions', 'public');
@@ -753,6 +758,9 @@ class CourseController extends Controller
             } catch (\Exception $e) {
                 return back()->withErrors(['attachments' => 'Failed to upload files. Please ensure files are under 20MB and are valid file types (PDF, documents, images, or archives).']);
             }
+        } else if ($existingSubmission && $existingSubmission->attachments) {
+            // Keep existing files only if no new files uploaded
+            $uploadedFiles = $existingSubmission->attachments;
         }
 
         // Auto-grade quiz if applicable
@@ -803,6 +811,8 @@ class CourseController extends Controller
         }
 
         // Create or update submission
+        $isNewSubmission = !$existingSubmission; // Track if this is a new submission
+        
         $submission = ClassworkSubmission::updateOrCreate(
             [
                 'classwork_id' => $classwork->id,
@@ -820,15 +830,18 @@ class CourseController extends Controller
             ]
         );
 
-        // Notify teacher about the submission
-        NotificationService::notifyTeacherAboutSubmission($classwork, auth()->user());
+        // Only notify teacher on new submissions, not updates
+        if ($isNewSubmission) {
+            NotificationService::notifyTeacherAboutSubmission($classwork, auth()->user());
+        }
 
         // Prepare success message
-        $successMessage = 'Work submitted successfully!';
+        $actionWord = $isNewSubmission ? 'submitted' : 'updated';
+        $successMessage = "Work {$actionWord} successfully!";
         if ($autoGrade !== null) {
-            $successMessage = "Quiz submitted and auto-graded! Your score: {$autoGrade}/{$totalPoints} points.";
+            $successMessage = "Quiz {$actionWord} and auto-graded! Your score: {$autoGrade}/{$totalPoints} points.";
         } elseif ($needsManualGrading) {
-            $successMessage = 'Quiz submitted! Your teacher will grade the essay questions.';
+            $successMessage = "Quiz {$actionWord}! Your teacher will grade the essay questions.";
         }
 
         return redirect()->back()->with('success', $successMessage);
