@@ -6,6 +6,7 @@ import axios from 'axios';
 import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
 // import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue'; // Disabled for debugging
 import { useOfflineSync } from '@/composables/useOfflineSync';
+import offlineStorage from '@/offline-storage';
 
 const page = usePage();
 const sidebarOpen = ref(false); // default collapsed; will be set on mount based on viewport
@@ -33,7 +34,7 @@ const user = computed(() => page.props.auth.user);
 const activeAcademicYear = computed(() => page.props.activeAcademicYear);
 
 // Offline sync
-const { syncPendingActions } = useOfflineSync();
+const { syncPendingActions, saveOfflineAction, updatePendingCount } = useOfflineSync();
 
 const handleRetrySync = () => {
     syncPendingActions();
@@ -80,10 +81,30 @@ const isActive = (routeName) => {
 const loadPrograms = async () => {
     loadingPrograms.value = true;
     try {
-        const response = await axios.get('/teacher/programs/list');
-        programs.value = response.data;
+        if (navigator.onLine) {
+            const response = await axios.get('/teacher/programs/list', { headers: { 'Accept': 'application/json' } });
+            programs.value = response.data || [];
+            // Cache for offline use
+            try { await offlineStorage.saveMany('programs', programs.value); } catch {}
+        } else {
+            const cached = await offlineStorage.getAll('programs');
+            programs.value = cached || [];
+            if (!cached || cached.length === 0) {
+                console.warn('No cached programs found for offline');
+            } else {
+                console.log(`📦 Loaded ${cached.length} cached programs`);
+            }
+        }
     } catch (error) {
         console.error('Failed to load programs:', error);
+        // Fallback to cache on error
+        try {
+            const cached = await offlineStorage.getAll('programs');
+            if (cached && cached.length) {
+                programs.value = cached;
+                console.log('📦 Using cached programs (fallback)');
+            }
+        } catch {}
     } finally {
         loadingPrograms.value = false;
     }
@@ -98,13 +119,31 @@ const loadCourseTemplates = async (programId, courseType) => {
     
     loadingTemplates.value = true;
     try {
-        const response = await axios.get(`/teacher/programs/${programId}/course-templates`, {
-            params: { course_type: courseType }
-        });
-        courseTemplates.value = response.data;
+        if (navigator.onLine) {
+            const response = await axios.get(`/teacher/programs/${programId}/course-templates`, {
+                params: { course_type: courseType }
+            });
+            courseTemplates.value = response.data || [];
+            // Cache templates for offline use
+            try { await offlineStorage.saveMany('courseTemplates', courseTemplates.value); } catch {}
+        } else {
+            const cached = await offlineStorage.getByIndex('courseTemplates', 'program_id', programId);
+            courseTemplates.value = (cached || []).filter(ct => (ct.course_type === courseType));
+            if (!courseTemplates.value.length) {
+                console.warn('No cached course templates for selected program/type');
+            } else {
+                console.log(`📦 Loaded ${courseTemplates.value.length} cached templates`);
+            }
+        }
     } catch (error) {
         console.error('Failed to load course templates:', error);
-        courseTemplates.value = [];
+        // Fallback to cache on error
+        try {
+            const cached = await offlineStorage.getByIndex('courseTemplates', 'program_id', programId);
+            courseTemplates.value = (cached || []).filter(ct => (ct.course_type === courseType));
+        } catch {
+            courseTemplates.value = [];
+        }
     } finally {
         loadingTemplates.value = false;
     }
@@ -193,17 +232,51 @@ const openCreateCourseModal = () => {
 };
 
 // Submit Create Course
-const submitCreateCourse = () => {
+const submitCreateCourse = async () => {
     createCourseForm.value.processing = true;
     createCourseForm.value.errors = {};
 
-    router.post('/teacher/courses', {
+    const payload = {
         program_id: createCourseForm.value.program_id,
         course_template_id: createCourseForm.value.course_template_id,
         section: createCourseForm.value.section,
         description: createCourseForm.value.description,
         academic_year_id: createCourseForm.value.academic_year_id,
-    }, {
+    };
+
+    if (!navigator.onLine) {
+        // Queue offline action
+        try {
+            await saveOfflineAction('create_course', payload);
+            showToast.value = true;
+            toastMessage.value = 'Saved offline. Will create the course when you are back online.';
+            setTimeout(() => hideToast(), 4000);
+            showCreateCourseModal.value = false;
+            createCourseForm.value.processing = false;
+            // Reset form
+            createCourseForm.value = {
+                program_id: null,
+                courseType: '',
+                course_template_id: null,
+                selectedCourse: null,
+                title: '',
+                section: '',
+                description: '',
+                units: 3,
+                academic_year_id: activeAcademicYear.value?.id || null,
+                processing: false,
+                errors: {}
+            };
+            // Update pending indicator
+            try { await updatePendingCount(); } catch {}
+            return;
+        } catch (e) {
+            console.error('Failed to save offline course create:', e);
+            // Fall through to try router.post (will likely fail but surfaces errors)
+        }
+    }
+
+    router.post('/teacher/courses', payload, {
         preserveScroll: true,
         onSuccess: () => {
             showCreateCourseModal.value = false;
@@ -481,7 +554,7 @@ onUnmounted(() => {
     <!-- Install PWA Prompt (Disabled for debugging) -->
     <!-- <InstallPWAPrompt /> -->
     
-    <div class="min-h-screen bg-gray-50">
+    <div class="min-h-screen bg-gray-50 overflow-x-hidden">
         <!-- Offline Sync Indicator -->
         <OfflineSyncIndicator @retry-sync="handleRetrySync" />
         
@@ -908,7 +981,7 @@ onUnmounted(() => {
             </header>
 
             <!-- Page Content -->
-            <main class="pt-20 p-6 bg-gray-50 min-h-screen">
+            <main class="pt-20 p-6 bg-gray-50 min-h-screen overflow-x-hidden">
                 <slot />
             </main>
         </div>

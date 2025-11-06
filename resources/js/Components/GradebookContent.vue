@@ -2,6 +2,8 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import axios from 'axios';
 import InfoTooltip from './InfoTooltip.vue';
+import { useTeacherOffline } from '../composables/useTeacherOffline';
+import { useOfflineSync } from '../composables/useOfflineSync';
 
 const props = defineProps({
     course: Object,
@@ -92,6 +94,10 @@ const finalsTables = ref(createDefaultTables('finals'));
 const studentGrades = ref({}); // Manual entries only (exams)
 const autoGrades = ref({}); // In-memory auto-populated grades from submissions
 const isInitializing = ref(true); // Gates autosave during initial load
+
+// Offline helpers
+const { updateGradebookOffline, getCachedGradebook, cacheGradebook } = useTeacherOffline();
+const { isOnline } = useOfflineSync();
 
 // Debug and initialize student grades
 console.log('GradebookContent - Students prop:', props.students);
@@ -1139,15 +1145,32 @@ const saveGradebook = async () => {
             midterm: midtermPeriodGrades,
             finals: finalsPeriodGrades
         });
-        
-        // Save to backend only (no localStorage)
-        console.log('[Gradebook] Saving gradebook to database (manual grades only)');
-        const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
-        console.log('[Gradebook] Gradebook saved successfully:', response.data);
-        
-        // Emit the updated gradebook so parent component can update its reactive ref
-        emit('gradebook-updated', data);
-        console.log('[Gradebook] Emitted gradebook-updated event');
+        // If offline (or forced by network conditions), save to offline queue and cache
+        if (!isOnline.value) {
+            console.log('[Gradebook] Offline detected. Saving gradebook offline and queuing for sync.');
+            await updateGradebookOffline(props.course.id, data);
+            // Cache as latest local copy
+            await cacheGradebook(props.course.id, data);
+            emit('gradebook-updated', data);
+            console.log('[Gradebook] Saved offline and emitted gradebook-updated');
+        } else {
+            // Attempt online save; on network failure, fall back to offline
+            try {
+                console.log('[Gradebook] Saving gradebook to database (manual grades only)');
+                const response = await axios.post(`/teacher/courses/${props.course.id}/gradebook/save`, data);
+                console.log('[Gradebook] Gradebook saved successfully:', response.data);
+                // Cache synced copy for offline use
+                await cacheGradebook(props.course.id, data);
+                // Emit the updated gradebook so parent component can update its reactive ref
+                emit('gradebook-updated', data);
+                console.log('[Gradebook] Emitted gradebook-updated event');
+            } catch (netErr) {
+                console.warn('[Gradebook] Online save failed, falling back to offline queue:', netErr);
+                await updateGradebookOffline(props.course.id, data);
+                await cacheGradebook(props.course.id, data);
+                emit('gradebook-updated', data);
+            }
+        }
     } catch (error) {
         console.error('[Gradebook] Error saving gradebook:', error);
         alert('Error saving gradebook: ' + (error.response?.data?.message || error.message));
@@ -1172,10 +1195,9 @@ watch(studentGrades, () => {
 
 const loadGradebook = async () => {
     try {
-        const response = await axios.get(`/teacher/courses/${props.course.id}/gradebook/load`);
-        if (response.data && response.data.gradebook) {
-            const gradebook = response.data.gradebook;
-            
+        // Helper to apply a gradebook object to local state
+        const applyGradebook = (gradebook) => {
+            if (!gradebook) return;
             // Load percentages
             if (gradebook.midtermPercentage !== undefined) {
                 midtermPercentage.value = gradebook.midtermPercentage;
@@ -1183,7 +1205,7 @@ const loadGradebook = async () => {
             if (gradebook.finalsPercentage !== undefined) {
                 finalsPercentage.value = gradebook.finalsPercentage;
             }
-            
+
             // Load midterm tables structure (keep defaults if no saved data)
             if (gradebook.midterm && gradebook.midterm.tables && gradebook.midterm.tables.length > 0) {
                 const midtermTablesObj = {};
@@ -1192,8 +1214,6 @@ const loadGradebook = async () => {
                 });
                 midtermTables.value = midtermTablesObj;
             }
-            // If no saved tables, keep the default structure
-            
             // Load finals tables structure (keep defaults if no saved data)
             if (gradebook.finals && gradebook.finals.tables && gradebook.finals.tables.length > 0) {
                 const finalsTablesObj = {};
@@ -1202,14 +1222,12 @@ const loadGradebook = async () => {
                 });
                 finalsTables.value = finalsTablesObj;
             }
-            // If no saved tables, keep the default structure
-            
+
             // Load grades
             if (gradebook.midterm && gradebook.midterm.grades) {
                 console.log('[Gradebook] Loading midterm grades:', gradebook.midterm.grades);
                 Object.keys(gradebook.midterm.grades).forEach(studentId => {
                     if (studentGrades.value[studentId]) {
-                        // Ensure we're loading an object, not an array
                         const midtermGrades = gradebook.midterm.grades[studentId];
                         if (Array.isArray(midtermGrades)) {
                             console.warn(`[Gradebook] Midterm grades for student ${studentId} is an array, converting to object`);
@@ -1220,12 +1238,11 @@ const loadGradebook = async () => {
                     }
                 });
             }
-            
+
             if (gradebook.finals && gradebook.finals.grades) {
-                console.log('[Gradebook] Loading finals grades from DB:', JSON.stringify(gradebook.finals.grades, null, 2));
+                console.log('[Gradebook] Loading finals grades from source:', JSON.stringify(gradebook.finals.grades, null, 2));
                 Object.keys(gradebook.finals.grades).forEach(studentId => {
                     if (studentGrades.value[studentId]) {
-                        // Ensure we're loading an object, not an array
                         const finalsGrades = gradebook.finals.grades[studentId];
                         if (Array.isArray(finalsGrades)) {
                             console.warn(`[Gradebook] Finals grades for student ${studentId} is an array, converting to object`);
@@ -1239,13 +1256,74 @@ const loadGradebook = async () => {
                     }
                 });
             } else {
-                console.log('[Gradebook] No finals grades found in database');
+                console.log('[Gradebook] No finals grades found in source');
+            }
+        };
+
+        if (isOnline.value) {
+            const response = await axios.get(`/teacher/courses/${props.course.id}/gradebook/load`);
+            if (response.data && response.data.gradebook) {
+                const gradebook = response.data.gradebook;
+                // Cache latest online copy
+                await cacheGradebook(props.course.id, gradebook);
+                applyGradebook(gradebook);
+            }
+        } else {
+            // Try to load from offline cache
+            const cached = await getCachedGradebook(props.course.id);
+            if (cached) {
+                console.log('[Gradebook] Loaded gradebook from offline cache');
+                applyGradebook(cached);
             }
         }
         // If no gradebook data at all, defaults will be used automatically
     } catch (error) {
         console.error('Error loading gradebook:', error);
-        // On error, keep the default tables
+        // On error, try offline cache as last resort
+        try {
+            const cached = await getCachedGradebook(props.course.id);
+            if (cached) {
+                console.log('[Gradebook] Fallback: loaded gradebook from offline cache after error');
+                const applyGradebook = (gradebook) => {
+                    if (!gradebook) return;
+                    if (gradebook.midtermPercentage !== undefined) {
+                        midtermPercentage.value = gradebook.midtermPercentage;
+                    }
+                    if (gradebook.finalsPercentage !== undefined) {
+                        finalsPercentage.value = gradebook.finalsPercentage;
+                    }
+                    if (gradebook.midterm?.tables?.length) {
+                        const midtermTablesObj = {};
+                        gradebook.midterm.tables.forEach(table => { midtermTablesObj[table.id] = table; });
+                        midtermTables.value = midtermTablesObj;
+                    }
+                    if (gradebook.finals?.tables?.length) {
+                        const finalsTablesObj = {};
+                        gradebook.finals.tables.forEach(table => { finalsTablesObj[table.id] = table; });
+                        finalsTables.value = finalsTablesObj;
+                    }
+                    if (gradebook.midterm?.grades) {
+                        Object.keys(gradebook.midterm.grades).forEach(studentId => {
+                            if (studentGrades.value[studentId]) {
+                                const midtermGrades = gradebook.midterm.grades[studentId];
+                                studentGrades.value[studentId].midterm = Array.isArray(midtermGrades) ? {} : { ...midtermGrades };
+                            }
+                        });
+                    }
+                    if (gradebook.finals?.grades) {
+                        Object.keys(gradebook.finals.grades).forEach(studentId => {
+                            if (studentGrades.value[studentId]) {
+                                const finalsGrades = gradebook.finals.grades[studentId];
+                                studentGrades.value[studentId].finals = Array.isArray(finalsGrades) ? {} : { ...finalsGrades };
+                            }
+                        });
+                    }
+                };
+                applyGradebook(cached);
+            }
+        } catch (e2) {
+            // keep defaults
+        }
     }
 };
 

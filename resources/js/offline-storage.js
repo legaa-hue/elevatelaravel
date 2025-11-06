@@ -2,7 +2,7 @@
 class OfflineStorage {
     constructor() {
         this.dbName = 'ElevateGS_Offline';
-        this.version = 2; // Upgraded to support teacher offline features
+    this.version = 5; // Bumped to migrate visitedPages store schema and add new stores
         this.db = null;
     }
 
@@ -18,6 +18,7 @@ class OfflineStorage {
 
             request.onupgradeneeded = (event) => {
                 const db = event.target.result;
+                const upgradeTx = request.transaction;
 
                 // Create object stores if they don't exist
                 if (!db.objectStoreNames.contains('courses')) {
@@ -71,6 +72,20 @@ class OfflineStorage {
                     materialsStore.createIndex('course_id', 'course_id', { unique: false });
                 }
 
+                // New: cache for Programs (for offline create-course modal)
+                if (!db.objectStoreNames.contains('programs')) {
+                    const programsStore = db.createObjectStore('programs', { keyPath: 'id' });
+                    programsStore.createIndex('status', 'status', { unique: false });
+                    programsStore.createIndex('name', 'name', { unique: false });
+                }
+
+                // New: cache for Course Templates (filterable by program and type)
+                if (!db.objectStoreNames.contains('courseTemplates')) {
+                    const ctStore = db.createObjectStore('courseTemplates', { keyPath: 'id' });
+                    ctStore.createIndex('program_id', 'program_id', { unique: false });
+                    ctStore.createIndex('course_type', 'course_type', { unique: false });
+                }
+
                 if (!db.objectStoreNames.contains('fileCache')) {
                     const fileCacheStore = db.createObjectStore('fileCache', { keyPath: 'url' });
                     fileCacheStore.createIndex('cached_at', 'cached_at', { unique: false });
@@ -96,6 +111,19 @@ class OfflineStorage {
                     const dashboardStore = db.createObjectStore('dashboardCache', { keyPath: 'key' });
                     dashboardStore.createIndex('cached_at', 'cached_at', { unique: false });
                 }
+
+                // Store for cached Inertia page payloads used for offline navigation
+                // If exists from older schema, drop and recreate to ensure keyPath is 'url'
+                if (db.objectStoreNames.contains('visitedPages')) {
+                    try {
+                        db.deleteObjectStore('visitedPages');
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+                const visited = db.createObjectStore('visitedPages', { keyPath: 'url' });
+                visited.createIndex('component', 'component', { unique: false });
+                visited.createIndex('cached_at', 'cached_at', { unique: false });
             };
         });
     }
@@ -215,6 +243,62 @@ class OfflineStorage {
 
     async markActionSynced(id) {
         return this.delete('pendingActions', id);
+    }
+
+    // -----------------------------
+    // Inertia page caching helpers
+    // -----------------------------
+
+    normalizePath(input) {
+        try {
+            const u = new URL(input, window.location.origin);
+            // Use pathname only as the key to maximize cache hits
+            const path = u.pathname || '/';
+            // Keep '/' for root; otherwise strip trailing slash
+            return path === '/' ? '/' : path.replace(/\/$/, '');
+        } catch {
+            // Fallback: ensure no trailing slash
+            const raw = (input || '').replace(window.location.origin, '');
+            if (raw === '' || raw === '/') return '/';
+            return raw.replace(/\/$/, '');
+        }
+    }
+
+    async savePageData(page) {
+        if (!page || !page.component) return false;
+        // Derive URL robustly; fall back to current location
+        const normalizedUrl = this.normalizePath(page.url || window.location.pathname || '/');
+        const record = {
+            url: normalizedUrl || '/',
+            component: page.component,
+            props: page.props || {},
+            version: page.version || null,
+            cached_at: Date.now()
+        };
+        try {
+            await this.save('visitedPages', record);
+            // Optional console for diagnostics
+            console.debug(`🗂️ Saved page cache: ${record.url} -> ${record.component}`);
+            return true;
+        } catch (e) {
+            console.error('Failed to save page cache:', e);
+            return false;
+        }
+    }
+
+    async getPageData(url) {
+        try {
+            const key = this.normalizePath(url);
+            let cached = await this.get('visitedPages', key);
+            // Backward-compat: older entries may have used '' for root
+            if (!cached && key === '/') {
+                cached = await this.get('visitedPages', '');
+            }
+            return cached || null;
+        } catch (e) {
+            console.error('Failed to read page cache:', e);
+            return null;
+        }
     }
 }
 

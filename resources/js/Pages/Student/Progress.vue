@@ -1,7 +1,8 @@
 <script setup>
 import StudentLayout from '@/Layouts/StudentLayout.vue'
 import InfoTooltip from '@/Components/InfoTooltip.vue'
-import { computed, reactive } from 'vue'
+import { computed, reactive, onMounted, onUnmounted, ref } from 'vue'
+import { router } from '@inertiajs/vue3'
 
 const props = defineProps({
   filters: {
@@ -134,6 +135,59 @@ function pieBackground(categories) {
   if (start < 360) parts.push(`#e5e7eb ${start}deg 360deg`)
   return `conic-gradient(${parts.join(',')})`
 }
+
+// --- Auto-refresh logic ---
+// Keep the student progress page fresh when data changes on the server (e.g., teacher syncs/deletes).
+// We avoid heavy realtime; use a few low-cost triggers:
+// - When the tab regains focus (visibilitychange)
+// - When the browser comes online
+// - Gentle polling while the tab is visible
+const lastReloadAt = ref(0)
+let refreshTimer = null
+function handleClassworksUpdated() { safeReloadCourses(0) }
+
+function safeReloadCourses(throttleMs = 10000) {
+  const now = Date.now()
+  if (!navigator.onLine) return
+  if (document.hidden) return
+  if (now - lastReloadAt.value < throttleMs) return
+  try {
+    router.reload({ only: ['courses'] })
+    lastReloadAt.value = now
+  } catch (e) {
+    // ignore
+  }
+}
+
+function onVisibilityChange() {
+  if (!document.hidden) {
+    safeReloadCourses(5000)
+  }
+}
+
+function onCameOnline() {
+  safeReloadCourses(0)
+}
+
+onMounted(() => {
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  window.addEventListener('online', onCameOnline)
+  // Gentle polling every 45s while visible
+  refreshTimer = setInterval(() => {
+    if (!document.hidden) safeReloadCourses(20000)
+  }, 45000)
+
+  // If the same-tab just synced classworks (unlikely for student), still listen for it
+  // to refresh quickly without waiting for the interval.
+  window.addEventListener('app:classworks-updated', handleClassworksUpdated)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('online', onCameOnline)
+  window.removeEventListener('app:classworks-updated', handleClassworksUpdated)
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 </script>
 
 <template>

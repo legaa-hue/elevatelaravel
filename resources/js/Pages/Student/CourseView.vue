@@ -2,7 +2,9 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import StudentLayout from '@/Layouts/StudentLayout.vue';
 import InfoTooltip from '@/Components/InfoTooltip.vue';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { useOfflineFiles } from '@/composables/useOfflineFiles';
+import { useOfflineSync } from '@/composables/useOfflineSync';
 
 const props = defineProps({
     course: Object,
@@ -41,6 +43,10 @@ const submissionFiles = ref([]);
 const linkSubmission = ref('');
 const quizAnswers = ref({});
 const showCorrectAnswers = ref(false);
+
+// Offline files helper
+const { downloadClassworkAttachments, downloadFiles, isFileCached } = useOfflineFiles();
+const { saveOfflineAction, updatePendingCount, savePendingFiles } = useOfflineSync();
 
 // File preview modal
 const showFilePreviewModal = ref(false);
@@ -156,6 +162,15 @@ const openClassworkModal = (classwork) => {
         // Populate quiz answers if they exist
         if (classwork.submission.quiz_answers) {
             quizAnswers.value = { ...classwork.submission.quiz_answers };
+        }
+    }
+
+    // Proactively cache teacher attachments for offline viewing
+    if (classwork.attachments && classwork.attachments.length > 0 && navigator.onLine) {
+        try {
+            downloadClassworkAttachments(classwork);
+        } catch (e) {
+            console.warn('Prefetch attachments failed:', e);
         }
     }
 };
@@ -277,7 +292,31 @@ const submitWork = () => {
         submissionForm.quiz_answers = quizAnswers.value;
     }
     
-    submissionForm.post(route('student.classwork.submit', selectedClasswork.value.id), {
+    // If offline, save to pending actions with files and exit gracefully
+    if (!navigator.onLine) {
+        const payload = {
+            classwork_id: selectedClasswork.value.id,
+            content: submissionForm.content || '',
+            link: submissionForm.link || '',
+            quiz_answers: submissionForm.quiz_answers || {},
+        };
+        saveOfflineAction('submit_classwork', payload)
+            .then(async (res) => {
+                if (res?.id && submissionFiles.value?.length) {
+                    await savePendingFiles(res.id, submissionFiles.value);
+                }
+                closeClassworkModal();
+                alert('Submission saved offline. It will sync automatically when you are online.');
+                await updatePendingCount();
+            })
+            .catch((e) => {
+                console.error('Failed to save offline submission:', e);
+                alert('Could not save submission offline. Please try again.');
+            });
+        return;
+    }
+
+    const postPromise = submissionForm.post(route('student.classwork.submit', selectedClasswork.value.id), {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: (page) => {
@@ -293,6 +332,28 @@ const submitWork = () => {
                 errorMsg += `${key}: ${errors[key]}\n`;
             });
             alert(errorMsg);
+        }
+    });
+    // Catch network errors (e.g., offline mid-request) and queue offline
+    postPromise.catch(async (err) => {
+        console.warn('Network error during submission, storing offline:', err?.message || err);
+        const payload = {
+            classwork_id: selectedClasswork.value.id,
+            content: submissionForm.content || '',
+            link: submissionForm.link || '',
+            quiz_answers: submissionForm.quiz_answers || {},
+        };
+        try {
+            const res = await saveOfflineAction('submit_classwork', payload);
+            if (res?.id && submissionFiles.value?.length) {
+                await savePendingFiles(res.id, submissionFiles.value);
+            }
+            closeClassworkModal();
+            alert('No connection. Your submission was saved offline and will sync when you are online.');
+            await updatePendingCount();
+        } catch (e) {
+            console.error('Failed to save submission offline after error:', e);
+            alert('Submission failed and could not be saved offline. Please try again later.');
         }
     });
 };
@@ -326,6 +387,61 @@ const requestGradeAccess = () => {
         }
     });
 };
+
+// Prefetch all attachments for current course materials (pending + completed)
+const prefetchAllVisibleAttachments = async () => {
+    try {
+        if (!navigator.onLine) return; // skip offline
+        const urls = [];
+        const collect = (arr) => {
+            (arr || []).forEach(cw => {
+                (cw.attachments || []).forEach(att => {
+                    if (att?.path) urls.push(`/storage/${att.path}`);
+                    else if (att?.url) urls.push(att.url);
+                });
+                // Also prefetch submission attachments shown to the student
+                if (cw.submission && cw.submission.attachments) {
+                    cw.submission.attachments.forEach(att => {
+                        if (att?.path) urls.push(`/storage/${att.path}`);
+                        else if (att?.url) urls.push(att.url);
+                    });
+                }
+            });
+        };
+        collect(props.pendingClassworks);
+        collect(props.completedClassworks);
+
+        // Filter to only those not cached yet
+        const uniqueUrls = Array.from(new Set(urls));
+        const checks = await Promise.all(uniqueUrls.map(u => isFileCached(u)));
+        const toDownload = uniqueUrls.filter((u, idx) => !checks[idx]);
+        if (toDownload.length > 0) {
+            await downloadFiles(toDownload, props.course?.id || null);
+        }
+    } catch (e) {
+        console.warn('Prefetch course attachments failed:', e);
+    }
+};
+
+// Listen to global event fired after sync to prefetch fresh attachments
+const onClassworksUpdated = () => {
+    prefetchAllVisibleAttachments();
+};
+
+onMounted(() => {
+    window.addEventListener('app:classworks-updated', onClassworksUpdated);
+    // Initial prefetch on mount
+    prefetchAllVisibleAttachments();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('app:classworks-updated', onClassworksUpdated);
+});
+
+// Also react when lists change due to navigation/partial reloads
+watch(() => [props.pendingClassworks, props.completedClassworks], () => {
+    prefetchAllVisibleAttachments();
+});
 </script>
 
 <template>

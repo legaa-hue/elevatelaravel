@@ -1,0 +1,307 @@
+/**
+ * Inertia Offline Handler
+ * Intercepts Inertia requests when offline and serves cached page data
+ */
+
+import { router } from '@inertiajs/vue3';
+import offlineStorage from './offline-storage';
+
+class InertiaOfflineHandler {
+    constructor() {
+        this.initialized = false;
+        this.resolveComponent = null;
+        this.componentCache = new Map(); // Cache resolved components in memory
+        this.isHandlingOfflineNavigation = false; // Prevent infinite loops
+    }
+
+    /**
+     * Set the component resolver function
+     */
+    setResolveComponent(resolver) {
+        this.resolveComponent = resolver;
+        console.log('📄 Component resolver stored');
+    }
+    
+    /**
+     * Cache a resolved component module
+     */
+    cacheComponent(name, componentModule) {
+        this.componentCache.set(name, componentModule);
+        console.log(`💾 Cached component: ${name}`);
+    }
+    
+    /**
+     * Get cached component module
+     */
+    getCachedComponent(name) {
+        return this.componentCache.get(name);
+    }
+
+    /**
+     * Initialize the offline handler
+     */
+    async init() {
+        if (this.initialized) return;
+
+        console.log('🔧 Initializing Inertia Offline Handler');
+        
+        // Intercept Inertia's before event to setup fetch interception
+        router.on('before', async (event) => {
+            // Only handle when offline
+            if (navigator.onLine) return;
+            
+            const url = event.detail.visit.url.href || event.detail.visit.url;
+            console.log('🔍 Offline navigation attempt to:', url);
+            
+            // Check if we have cached data
+            const cachedPage = await this.getCachedPageData(url);
+            
+            if (!cachedPage) {
+                console.log('❌ No cached page found');
+                event.preventDefault();
+                alert('This page is not available offline');
+                return;
+            }
+            
+            console.log('✅ Found cached page:', cachedPage.component);
+            
+            // Check if component is cached
+            const cachedComponent = this.getCachedComponent(cachedPage.component);
+            if (!cachedComponent) {
+                console.error(`❌ Component ${cachedPage.component} not cached`);
+                event.preventDefault();
+                alert('This page was not fully cached and cannot be displayed offline.');
+                return;
+            }
+            
+            console.log('� Component available - setting up fetch interception');
+            
+            // Don't prevent - let it continue, but intercept the fetch
+            // Create proper Inertia page object
+            const page = {
+                component: cachedPage.component,
+                props: cachedPage.props || {},
+                url: url,
+                version: cachedPage.version || null,
+                scrollRegions: [],
+                rememberedState: {}
+            };
+            
+            // Intercept fetch BEFORE the visit proceeds
+            const originalFetch = window.fetch;
+            const self = this;
+            
+            window.fetch = async function(input, init) {
+                const requestUrl = typeof input === 'string' ? input : input.url;
+                
+                // Check if this is the Inertia request for our offline page
+                if (requestUrl === url && init?.headers?.['X-Inertia']) {
+                    console.log('🎯 Intercepted! Returning cached page');
+                    
+                    // Restore original fetch
+                    window.fetch = originalFetch;
+                    
+                    // Return mock response
+                    return Promise.resolve(new Response(
+                        JSON.stringify(page),
+                        {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Inertia': 'true',
+                                'X-Inertia-Version': page.version || ''
+                            }
+                        }
+                    ));
+                }
+                
+                // Other requests use original fetch
+                return originalFetch.apply(this, arguments);
+            };
+            
+            console.log('✅ Fetch interceptor ready - allowing visit to proceed');
+        });
+        
+        // CRITICAL: Intercept component resolution for offline use
+        // Store original resolver and wrap it
+        const originalResolveComponent = this.resolveComponent;
+        
+        // Create offline-aware resolver
+        this.offlineResolver = async (name) => {
+            if (!navigator.onLine) {
+                // Try to get from cache first when offline
+                const cached = this.getCachedComponent(name);
+                if (cached) {
+                    console.log(`📦 Using cached component: ${name}`);
+                    return cached;
+                }
+                console.warn(`⚠️ Component ${name} not in cache!`);
+            }
+            
+            // Online or not cached - use original resolver
+            return originalResolveComponent(name);
+        };
+
+        this.initialized = true;
+        console.log('✅ Inertia offline handler initialized');
+    }
+    
+    /**
+     * Handle offline navigation with cached page
+     */
+    async handleOfflineNavigation(url, visit) {
+        // Check if we have cached data
+        const cachedPage = await this.getCachedPageData(url);
+        
+        if (cachedPage) {
+            console.log('✅ Found cached page:', cachedPage.component);
+            
+            // Check if component is cached
+            const cachedComponent = this.getCachedComponent(cachedPage.component);
+            if (!cachedComponent) {
+                console.error(`❌ Component ${cachedPage.component} not cached for offline use`);
+                alert(`This page was not fully cached and cannot be displayed offline.`);
+                return;
+            }
+            
+            console.log('📦 Component available in cache');
+            
+            // Create proper Inertia page object
+            const page = {
+                component: cachedPage.component,
+                props: cachedPage.props || {},
+                url: url,
+                version: cachedPage.version || null,
+                scrollRegions: [],
+                rememberedState: {}
+            };
+            
+            console.log('📄 Page data prepared for offline navigation');
+            
+            // Intercept fetch to return our cached page data
+            const originalFetch = window.fetch;
+            
+            window.fetch = async function(input, init) {
+                const requestUrl = typeof input === 'string' ? input : input.url;
+                
+                // Check if this is the offline Inertia navigation request
+                if (requestUrl === url && init?.headers?.['X-Inertia']) {
+                    console.log('🎯 Intercepting Inertia fetch - returning cached page');
+                    
+                    // Restore original fetch
+                    window.fetch = originalFetch;
+                    
+                    // Return a mock successful response with our cached page
+                    return Promise.resolve(new Response(
+                        JSON.stringify(page),
+                        {
+                            status: 200,
+                            statusText: 'OK',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'X-Inertia': 'true',
+                                'X-Inertia-Version': page.version || ''
+                            }
+                        }
+                    ));
+                }
+                
+                // For any other request, use original fetch
+                return originalFetch.apply(this, arguments);
+            };
+            
+            // Now make the actual Inertia visit
+            // The resolve function in app.js will use the cached component
+            console.log('🚀 Making Inertia visit (component will be resolved from cache)');
+            router.visit(url, {
+                preserveScroll: false,
+                preserveState: false,
+                replace: false,
+                onSuccess: () => {
+                    console.log('✅ Offline navigation completed successfully');
+                    window.fetch = originalFetch;
+                },
+                onError: (errors) => {
+                    console.error('❌ Offline navigation error:', errors);
+                    window.fetch = originalFetch;
+                },
+                onFinish: () => {
+                    console.log('🏁 Visit finished');
+                    window.fetch = originalFetch;
+                }
+            });
+            
+        } else {
+            console.log('❌ No cached page found');
+            alert('This page is not available offline');
+        }
+    }
+
+    /**
+     * Get cached page data from IndexedDB
+     */
+    async getCachedPageData(url) {
+        try {
+            // Normalize URL (remove query params and hash for cache key)
+            const urlObj = new URL(url, window.location.origin);
+            const cacheKey = urlObj.pathname;
+            
+            // Try to get from visitedPages store
+            const cached = await offlineStorage.get('visitedPages', cacheKey);
+            
+            if (cached && cached.component) {
+                return {
+                    component: cached.component,
+                    props: cached.props || {},
+                    url: cacheKey,
+                    version: cached.version
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Failed to get cached page:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Preload critical pages for offline use
+     */
+    async preloadPages(urls) {
+        if (!navigator.onLine) {
+            console.warn('Cannot preload - offline');
+            return;
+        }
+
+        console.log(`📦 Preloading ${urls.length} pages...`);
+
+        for (const url of urls) {
+            try {
+                // Make Inertia request to cache the page
+                await fetch(url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-Inertia': 'true',
+                        'X-Inertia-Version': document.querySelector('meta[name="inertia-version"]')?.content || ''
+                    }
+                });
+
+                console.log(`✅ Preloaded: ${url}`);
+            } catch (error) {
+                console.warn(`Failed to preload ${url}:`, error);
+            }
+        }
+    }
+}
+
+// Create singleton
+const inertiaOfflineHandler = new InertiaOfflineHandler();
+
+// Make globally available
+if (typeof window !== 'undefined') {
+    window.inertiaOfflineHandler = inertiaOfflineHandler;
+}
+
+export default inertiaOfflineHandler;

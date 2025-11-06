@@ -5,6 +5,33 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// Serve the Service Worker from a root URL using a small loader that imports the built SW
+Route::get('/service-worker.js', function () {
+    $ts = time();
+    $loader = "// SW loader shim (loads built sw bundle)\n"
+        . "// Note: This runs in the Service Worker global scope\n"
+        . "self.addEventListener('error', function(e){ try { console.error('[sw-loader] error:', e.message, e.filename+':'+e.lineno+':'+e.colno); } catch(_) {} try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: e && (e.message||e.toString()), stack: (e && e.error && (e.error.stack||e.error)) || '' }); }); }); } catch(_) {} });\n"
+        . "self.addEventListener('unhandledrejection', function(e){ try { console.error('[sw-loader] unhandledrejection:', e.reason && (e.reason.stack || e.reason)); } catch(_) {} try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: 'unhandledrejection', stack: e && e.reason && (e.reason.stack || e.reason) }); }); }); } catch(_) {} });\n"
+        . "try {\n"
+        . "  // Signal loader start\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_INFO', message: 'loader-start' }); }); }); } catch(_) {}\n"
+        . "  importScripts('/build/sw.js?v=" . $ts . "');\n"
+        . "  // Signal loader success\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_INFO', message: 'loader-success' }); }); }); } catch(_) {}\n"
+        . "} catch (err) {\n"
+        . "  try { console.error('[sw-loader] importScripts failed:', err && (err.stack || err.message || err)); } catch(_) {}\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: 'importScripts failed', stack: err && (err.stack || err.message || err) }); }); }); } catch(_) {}\n"
+        . "  throw err;\n"
+        . "}\n";
+    return response($loader, 200, [
+        'Content-Type' => 'text/javascript; charset=utf-8',
+        'Service-Worker-Allowed' => '/',
+        'Cache-Control' => 'no-cache, no-store, must-revalidate',
+        'Pragma' => 'no-cache',
+        'Expires' => '0',
+    ]);
+});
+
 Route::get('/', function () {
     return Inertia::render('Landing');
 });

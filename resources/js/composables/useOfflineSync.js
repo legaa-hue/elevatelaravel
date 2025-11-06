@@ -2,6 +2,10 @@ import { ref, onMounted, onUnmounted, computed } from 'vue';
 import offlineStorage from '../offline-storage';
 import { router } from '@inertiajs/vue3';
 
+// Module-scoped guards to avoid duplicate listeners and concurrent syncs across multiple component instances
+let listenersInitialized = false;
+let globalIsSyncing = false;
+
 export function useOfflineSync() {
     const isOnline = ref(navigator.onLine);
     const isSyncing = ref(false);
@@ -23,10 +27,11 @@ export function useOfflineSync() {
 
     // Sync pending actions when coming online
     const syncPendingActions = async () => {
-        if (!isOnline.value || isSyncing.value) return;
+        if (!isOnline.value || isSyncing.value || globalIsSyncing) return;
 
         try {
             isSyncing.value = true;
+            globalIsSyncing = true;
             syncStatus.value = { type: 'syncing', message: 'Syncing data...' };
 
             const pendingActions = await offlineStorage.getPendingActions();
@@ -40,12 +45,27 @@ export function useOfflineSync() {
 
             let successCount = 0;
             let failCount = 0;
+            // Track if current page should refresh specific props after sync
+            let shouldReloadClassworks = false;
+            let shouldReloadGradebook = false;
 
             for (const action of pendingActions) {
                 try {
                     await processPendingAction(action);
                     await offlineStorage.markActionSynced(action.id);
                     successCount++;
+                    // If any action affects classworks/materials, mark for reload
+                    if ([
+                        'create_classwork',
+                        'update_classwork',
+                        'create_material',
+                        'submit_classwork'
+                    ].includes(action.type)) {
+                        shouldReloadClassworks = true;
+                    }
+                    if (action.type === 'update_gradebook') {
+                        shouldReloadGradebook = true;
+                    }
                 } catch (error) {
                     console.error('Failed to sync action:', action, error);
                     failCount++;
@@ -73,6 +93,39 @@ export function useOfflineSync() {
 
             // Update pending count
             await updatePendingCount();
+
+            // If we created/updated classworks/materials, refresh the page data so
+            // new items appear without manual reload and progress widgets update.
+            // Use partial reload for performance.
+            if (shouldReloadClassworks) {
+                try {
+                    router.reload({ only: ['classworks', 'students'] });
+                    // Also dispatch a lightweight global event for any listeners (same-tab only)
+                    try {
+                        const evt = new CustomEvent('app:classworks-updated', {
+                            detail: { at: Date.now(), scope: 'classworks' }
+                        });
+                        window.dispatchEvent(evt);
+                    } catch (e2) { /* ignore */ }
+                } catch (e) {
+                    // If router context isn't ready for some reason, ignore gracefully
+                    console.warn('Could not trigger Inertia reload after sync', e);
+                }
+            }
+            // If gradebook was updated, refresh gradebook-related props
+            if (shouldReloadGradebook) {
+                try {
+                    router.reload({ only: ['gradebook', 'students'] });
+                    try {
+                        const evt = new CustomEvent('app:gradebook-updated', {
+                            detail: { at: Date.now(), scope: 'gradebook' }
+                        });
+                        window.dispatchEvent(evt);
+                    } catch (e2) { /* ignore */ }
+                } catch (e) {
+                    console.warn('Could not trigger Inertia reload after gradebook sync', e);
+                }
+            }
             
         } catch (error) {
             console.error('Sync error:', error);
@@ -85,6 +138,7 @@ export function useOfflineSync() {
             }, 5000);
         } finally {
             isSyncing.value = false;
+            globalIsSyncing = false;
         }
     };
 
@@ -109,7 +163,7 @@ export function useOfflineSync() {
                 return await syncDeleteEvent(data);
             
             case 'create_classwork':
-                return await syncCreateClasswork(data);
+                return await syncCreateClasswork({ ...data, pendingActionId: action.id });
             
             case 'update_classwork':
                 return await syncUpdateClasswork(data);
@@ -117,10 +171,17 @@ export function useOfflineSync() {
             case 'create_material':
                 return await syncCreateMaterial(data);
             
+            case 'submit_classwork':
+                return await syncSubmitClasswork({ ...data, pendingActionId: action.id });
+            
             case 'update_gradebook':
                 return await syncUpdateGradebook(data);
             
             case 'grade_submission':
+                // If a custom endpoint was provided when saving the action, prefer it
+                if (endpoint) {
+                    return await syncCustomAction(endpoint, method, data);
+                }
                 return await syncGradeSubmission(data);
             
             case 'custom':
@@ -129,6 +190,62 @@ export function useOfflineSync() {
             default:
                 throw new Error(`Unknown action type: ${type}`);
         }
+    };
+
+    // -----------------------------
+    // Pending uploads (files) store
+    // -----------------------------
+    const openPendingUploadsDB = () => {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open('PendingUploadsDB', 1);
+            request.onupgradeneeded = (event) => {
+                const db = event.target.result;
+                if (!db.objectStoreNames.contains('pendingFiles')) {
+                    const store = db.createObjectStore('pendingFiles', { keyPath: 'id', autoIncrement: true });
+                    store.createIndex('actionId', 'actionId', { unique: false });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    };
+
+    const savePendingFiles = async (actionId, files) => {
+        if (!files || files.length === 0) return;
+        const db = await openPendingUploadsDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['pendingFiles'], 'readwrite');
+            const store = tx.objectStore('pendingFiles');
+            files.forEach((file) => {
+                store.add({ actionId, name: file.name, blob: file, created_at: Date.now() });
+            });
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
+    };
+
+    const getPendingFiles = async (actionId) => {
+        const db = await openPendingUploadsDB();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['pendingFiles'], 'readonly');
+            const store = tx.objectStore('pendingFiles');
+            const idx = store.index('actionId');
+            const req = idx.getAll(actionId);
+            req.onsuccess = () => resolve(req.result || []);
+            req.onerror = () => reject(req.error);
+        });
+    };
+
+    const clearPendingFiles = async (actionId) => {
+        const db = await openPendingUploadsDB();
+        const files = await getPendingFiles(actionId);
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(['pendingFiles'], 'readwrite');
+            const store = tx.objectStore('pendingFiles');
+            files.forEach((rec) => store.delete(rec.id));
+            tx.oncomplete = () => resolve(true);
+            tx.onerror = () => reject(tx.error);
+        });
     };
 
     // Sync functions for each action type
@@ -215,20 +332,56 @@ export function useOfflineSync() {
 
     const syncCreateClasswork = async (data) => {
         const formData = new FormData();
-        
-        Object.keys(data).forEach(key => {
-            if (data[key] !== null && data[key] !== undefined) {
-                if (key === 'attachments' && Array.isArray(data[key])) {
-                    data[key].forEach(file => formData.append('attachments[]', file));
-                } else if (typeof data[key] === 'object') {
-                    formData.append(key, JSON.stringify(data[key]));
-                } else {
-                    formData.append(key, data[key]);
-                }
+
+        // Helper to append nested objects/arrays as form fields for Laravel
+        const appendFormData = (fd, value, key) => {
+            if (value === null || value === undefined) return;
+            if (Array.isArray(value)) {
+                value.forEach((v, i) => appendFormData(fd, v, `${key}[${i}]`));
+            } else if (typeof value === 'object' && !(value instanceof Blob) && !(value instanceof File)) {
+                Object.keys(value).forEach(k => {
+                    const v = value[k];
+                    const newKey = key ? `${key}[${k}]` : k;
+                    appendFormData(fd, v, newKey);
+                });
+            } else {
+                fd.append(key, value);
             }
+        };
+
+        // Build payload excluding attachments and internal fields
+        const payload = { ...data };
+        delete payload.attachments;
+        delete payload.pendingActionId;
+
+        // Normalize booleans expected by Laravel
+        if (typeof payload.has_submission === 'boolean') {
+            payload.has_submission = payload.has_submission ? 1 : 0;
+        }
+        if (typeof payload.show_correct_answers === 'boolean') {
+            payload.show_correct_answers = payload.show_correct_answers ? 1 : 0;
+        }
+
+        // Append nested fields
+        Object.keys(payload).forEach((key) => {
+            const val = payload[key];
+            appendFormData(formData, val, key);
         });
 
-        const response = await fetch('/teacher/classwork', {
+        // If there are files saved for this pending action, append them
+        if (data.pendingActionId) {
+            try {
+                const pendingFiles = await getPendingFiles(data.pendingActionId);
+                if (pendingFiles && pendingFiles.length > 0) {
+                    pendingFiles.forEach(rec => formData.append('attachments[]', rec.blob, rec.name));
+                }
+            } catch (e) {
+                console.warn('Could not load pending files for action', data.pendingActionId, e);
+            }
+        }
+
+        const courseId = data.course_id;
+        const response = await fetch(`/teacher/courses/${courseId}/classwork`, {
             method: 'POST',
             headers: {
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -238,7 +391,21 @@ export function useOfflineSync() {
         });
 
         if (!response.ok) throw new Error('Failed to create classwork');
-        return await response.json();
+        // The controller returns a redirect for Inertia; attempt JSON first, fallback to text
+        let result;
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            result = await response.text();
+        }
+
+        // Clean up any pending files after successful upload
+        if (data.pendingActionId) {
+            try { await clearPendingFiles(data.pendingActionId); } catch (e) { /* ignore */ }
+        }
+
+        return result;
     };
 
     const syncUpdateClasswork = async (data) => {
@@ -260,9 +427,81 @@ export function useOfflineSync() {
         return await syncCreateClasswork({ ...data, type: 'material' });
     };
 
+    const syncSubmitClasswork = async (data) => {
+        const formData = new FormData();
+
+        // Helper to append nested objects/arrays as form fields for Laravel
+        const appendFormData = (fd, value, key) => {
+            if (value === null || value === undefined) return;
+            if (Array.isArray(value)) {
+                value.forEach((v, i) => appendFormData(fd, v, `${key}[${i}]`));
+            } else if (typeof value === 'object' && !(value instanceof Blob) && !(value instanceof File)) {
+                Object.keys(value).forEach(k => {
+                    const v = value[k];
+                    const newKey = key ? `${key}[${k}]` : k;
+                    appendFormData(fd, v, newKey);
+                });
+            } else {
+                fd.append(key, value);
+            }
+        };
+
+        // Build payload excluding attachments and internal fields
+        const payload = { ...data };
+        delete payload.attachments;
+        const pendingActionId = payload.pendingActionId;
+        delete payload.pendingActionId;
+
+        // Only include known fields to avoid backend confusion
+        const allowed = ['content', 'link', 'quiz_answers'];
+        allowed.forEach((key) => {
+            if (payload[key] !== undefined) appendFormData(formData, payload[key], key);
+        });
+
+        // Append any pending files saved for this action
+        if (pendingActionId) {
+            try {
+                const pendingFiles = await getPendingFiles(pendingActionId);
+                if (pendingFiles && pendingFiles.length > 0) {
+                    pendingFiles.forEach(rec => formData.append('attachments[]', rec.blob, rec.name));
+                }
+            } catch (e) {
+                console.warn('Could not load pending files for student submission', pendingActionId, e);
+            }
+        }
+
+        const classworkId = data.classwork_id;
+        const response = await fetch(`/student/classwork/${classworkId}/submit`, {
+            method: 'POST',
+            headers: {
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
+                'Accept': 'application/json',
+            },
+            body: formData
+        });
+
+        if (!response.ok) throw new Error('Failed to submit classwork');
+
+        let result;
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            result = await response.json();
+        } else {
+            result = await response.text();
+        }
+
+        // Clean up any pending files after successful upload
+        if (pendingActionId) {
+            try { await clearPendingFiles(pendingActionId); } catch (e) { /* ignore */ }
+        }
+
+        return result;
+    };
+
     const syncUpdateGradebook = async (data) => {
-        const response = await fetch(`/teacher/courses/${data.course_id}/gradebook`, {
-            method: 'PUT',
+        // Align with existing Laravel route that Gradebook.vue uses online
+        const response = await fetch(`/teacher/courses/${data.course_id}/gradebook/save`, {
+            method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
@@ -276,18 +515,29 @@ export function useOfflineSync() {
     };
 
     const syncGradeSubmission = async (data) => {
-        const response = await fetch(`/teacher/submissions/${data.submission_id}/grade`, {
+        // Build the correct endpoint with course, classwork, and submission IDs
+        const endpoint = `/teacher/courses/${data.course_id}/classwork/${data.classwork_id}/submissions/${data.submission_id}/grade`;
+
+        const response = await fetch(endpoint, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
             },
             body: JSON.stringify(data)
         });
 
         if (!response.ok) throw new Error('Failed to grade submission');
-        return await response.json();
+
+        // Some Laravel endpoints may redirect and return HTML; handle both JSON and text
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return await response.json();
+        }
+        // Treat non-JSON (HTML redirect) as success; return minimal info
+        return { ok: true, status: response.status, contentType };
     };
 
     const syncCustomAction = async (endpoint, method, data) => {
@@ -297,12 +547,18 @@ export function useOfflineSync() {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.content || '',
                 'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
             },
             body: JSON.stringify(data)
         });
 
         if (!response.ok) throw new Error(`Failed to sync ${endpoint}`);
-        return await response.json();
+
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            return await response.json();
+        }
+        return { ok: true, status: response.status, contentType };
     };
 
     // Update pending actions count
@@ -313,7 +569,13 @@ export function useOfflineSync() {
 
     // Save action for later sync
     const saveOfflineAction = async (type, data, endpoint = null, method = 'POST') => {
-        await offlineStorage.addPendingAction({
+        // Attach idempotency token if missing
+        try {
+            if (data && typeof data === 'object' && !data.client_token) {
+                data.client_token = `${type}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            }
+        } catch {}
+        const id = await offlineStorage.addPendingAction({
             type,
             data,
             endpoint,
@@ -326,6 +588,7 @@ export function useOfflineSync() {
         return {
             success: true,
             offline: true,
+            id,
             message: 'Changes saved offline. Will sync when online.'
         };
     };
@@ -354,21 +617,25 @@ export function useOfflineSync() {
 
     // Lifecycle hooks
     onMounted(() => {
-        window.addEventListener('online', updateOnlineStatus);
-        window.addEventListener('offline', updateOnlineStatus);
-        
+        // Register online/offline listeners only once globally
+        if (!listenersInitialized) {
+            window.addEventListener('online', updateOnlineStatus);
+            window.addEventListener('offline', updateOnlineStatus);
+            listenersInitialized = true;
+        }
+
         // Initial check
         updatePendingCount();
-        
-        // Try to sync if online
-        if (isOnline.value) {
+
+        // Only the first mounted instance should kick off an initial sync
+        if (isOnline.value && !globalIsSyncing) {
             syncPendingActions();
         }
     });
 
+    // Do not remove global listeners on unmount to prevent other views losing them
     onUnmounted(() => {
-        window.removeEventListener('online', updateOnlineStatus);
-        window.removeEventListener('offline', updateOnlineStatus);
+        // no-op; keep listeners alive for the lifetime of the app
     });
 
     // Computed properties
@@ -404,6 +671,7 @@ export function useOfflineSync() {
         hasCachedData,
         getCachedData,
         cacheData,
-        updatePendingCount
+        updatePendingCount,
+        savePendingFiles
     };
 }

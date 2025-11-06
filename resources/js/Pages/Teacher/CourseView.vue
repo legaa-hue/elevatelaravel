@@ -1,8 +1,10 @@
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     <script setup>
-import { ref, computed, watch } from 'vue';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import GradebookContent from '@/Components/GradebookContent.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    import { useOfflineFiles } from '@/composables/useOfflineFiles';
 
 const props = defineProps({
     course: Object,
@@ -27,6 +29,17 @@ const gradebook = ref(props.course.gradebook || {
     midterm: { tables: [], grades: {}, periodGrades: {} },
     finals: { tables: [], grades: {}, periodGrades: {} }
 });
+
+// Sync local gradebook with server-provided course.gradebook when it changes (e.g., after creating gradebook subcolumns)
+watch(
+    () => props.course?.gradebook,
+    (newVal) => {
+        if (newVal && typeof newVal === 'object') {
+            gradebook.value = newVal;
+        }
+    },
+    { deep: true }
+);
 
 // Restore active tab from sessionStorage or default to 'classwork'
 const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'classwork');
@@ -75,6 +88,10 @@ const tabs = [
     { id: 'class-record', name: 'Class Record' },
 ];
 
+// Offline sync utilities
+const { saveOfflineAction, updatePendingCount, savePendingFiles } = useOfflineSync();
+const { downloadFiles, downloadClassworkAttachments, isFileCached } = useOfflineFiles();
+
 // Watch activeTab and save to sessionStorage
 watch(activeTab, (newTab, oldTab) => {
     sessionStorage.setItem(`courseTab_${props.course.id}`, newTab);
@@ -106,6 +123,7 @@ const gradeAccessRequests = computed(() => {
 });
 
 const todoItems = computed(() => {
+    // Use full classwork list for Classroom (includes lessons/materials)
     return props.classwork?.filter(item => item.is_todo) || [];
 });
 
@@ -287,6 +305,20 @@ watch(() => classworkForm.title, (newTitle) => {
     }
 });
 
+// Watch gradebook fields to debug selection
+watch(() => classworkForm.grading_period, (val) => {
+    console.log('🎯 Grading Period changed:', val);
+});
+watch(() => classworkForm.grade_table_name, (val) => {
+    console.log('📊 Grade Table changed:', val);
+});
+watch(() => classworkForm.grade_main_column, (val) => {
+    console.log('📋 Main Column changed:', val);
+});
+watch(() => classworkForm.grade_sub_column, (val) => {
+    console.log('📝 Sub Column changed:', val);
+});
+
 // Watch for question type changes to initialize correct data structures
 watch(() => quizQuestions.value.map(q => q.type), (newTypes, oldTypes) => {
     quizQuestions.value.forEach((question, index) => {
@@ -372,6 +404,11 @@ const openEditModal = (classwork) => {
     existingAttachments.value = classwork.attachments || [];
     fileAttachments.value = []; // Clear new file uploads
     showClassworkModal.value = true;
+
+    // Prefetch attachments for this classwork so teacher can view offline immediately
+    if (classwork.attachments && classwork.attachments.length > 0 && navigator.onLine) {
+        try { downloadClassworkAttachments(classwork); } catch (e) { console.warn('Teacher prefetch failed:', e); }
+    }
 };
 
 const confirmDelete = (classwork) => {
@@ -390,8 +427,8 @@ const deleteClasswork = () => {
         onSuccess: () => {
             showDeleteConfirm.value = false;
             classworkToDelete.value = null;
-            // Reload the page data to remove deleted classwork
-            router.reload({ only: ['classworks'] });
+            // Reload the page data to remove deleted classwork and update progress
+            router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
         },
     });
 };
@@ -502,7 +539,7 @@ const removeFile = (index) => {
     fileAttachments.value.splice(index, 1);
 };
 
-const submitClasswork = () => {
+const submitClasswork = async () => {
     // Set has_submission to false for lessons
     if (classworkForm.type === 'lesson') {
         classworkForm.has_submission = false;
@@ -533,6 +570,10 @@ const submitClasswork = () => {
         existing_attachments_count: existingAttachments.value.length,
         rubric_criteria_count: classworkForm.rubric_criteria.length,
         quiz_questions_count: classworkForm.quiz_questions.length,
+        grading_period: classworkForm.grading_period,
+        grade_table_name: classworkForm.grade_table_name,
+        grade_main_column: classworkForm.grade_main_column,
+        grade_sub_column: classworkForm.grade_sub_column,
     });
 
     if (editingClasswork.value) {
@@ -552,18 +593,26 @@ const submitClasswork = () => {
         }
         
         // Update existing classwork
+        // Validate we have a classwork id for the update route
+        const classworkId = editingClasswork.value?.id;
+        if (!classworkId) {
+            console.error('Edit attempted without a valid classwork id:', editingClasswork.value);
+            alert('Could not update: missing classwork ID. Please close the modal and try editing again.');
+            return;
+        }
+
         // Use POST with _method=PUT for file uploads (Laravel requirement)
         classworkForm.transform(() => updateData).post(route('teacher.courses.classwork.update', {
             course: props.course.id,
-            classwork: editingClasswork.value.id
+            classwork: classworkId
         }), {
             preserveScroll: true,
             forceFormData: fileAttachments.value.length > 0, // Only force FormData if uploading files
             onSuccess: () => {
                 closeClassworkModal();
                 alert('Classwork updated successfully!');
-                // Reload the page data to show updated classwork
-                router.reload({ only: ['classworks'] });
+                // Reload the page data to show updated classwork and progress
+                router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
             },
             onError: (errors) => {
                 console.error('Failed to update classwork:', errors);
@@ -579,11 +628,50 @@ const submitClasswork = () => {
             }
         });
     } else {
-        // When creating: send all new file uploads
+        // When creating: if offline, queue for later sync; if online, post immediately
+        const isOnline = navigator.onLine;
+        if (!isOnline) {
+            // Build a plain JSON payload (no File objects) for offline queue
+            const payload = {
+                course_id: props.course.id,
+                type: classworkForm.type,
+                title: classworkForm.title,
+                description: classworkForm.description,
+                due_date: classworkForm.due_date,
+                points: classworkForm.points,
+                has_submission: classworkForm.has_submission,
+                status: classworkForm.status,
+                rubric_criteria: classworkForm.rubric_criteria,
+                quiz_questions: classworkForm.quiz_questions,
+                show_correct_answers: classworkForm.show_correct_answers,
+                grading_period: classworkForm.grading_period,
+                grade_table_name: classworkForm.grade_table_name,
+                grade_main_column: classworkForm.grade_main_column,
+                grade_sub_column: classworkForm.grade_sub_column,
+                // attachments will be saved separately in PendingUploadsDB
+            };
+
+            try {
+                const res = await saveOfflineAction('create_classwork', payload);
+                // Persist file blobs for this pending action so we can upload later
+                if (fileAttachments.value && fileAttachments.value.length > 0 && res?.id) {
+                    await savePendingFiles(res.id, fileAttachments.value);
+                }
+                closeClassworkModal();
+                alert('Material saved offline. It will sync automatically when you are online.');
+                await updatePendingCount();
+                return;
+            } catch (err) {
+                console.error('Failed to save classwork offline:', err);
+                alert('Failed to save offline. Please try again.');
+                return;
+            }
+        }
+
+        // Online: send all new file uploads now
+        // Add a one-time idempotency token to prevent double-create on double-click
         classworkForm.attachments = fileAttachments.value;
-        
-        // Create new classwork
-        // When posting with files, Inertia automatically converts to FormData
+
         classworkForm.post(route('teacher.courses.classwork.store', props.course.id), {
             preserveScroll: true,
             forceFormData: true, // Force FormData for file uploads
@@ -591,13 +679,17 @@ const submitClasswork = () => {
                 const typeName = classworkForm.type.charAt(0).toUpperCase() + classworkForm.type.slice(1);
                 closeClassworkModal();
                 alert(`${typeName} created successfully!`);
-                // Reload the page data to show new classwork
-                router.reload({ only: ['classworks'] });
+                // If this material is linked to the gradebook, switch to the Gradebook tab for immediate visibility
+                if (classworkForm.grading_period && classworkForm.grade_table_name && classworkForm.grade_main_column) {
+                    activeTab.value = 'gradebook';
+                }
+                router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
+                // After reload completes, a global event may be fired; also proactively prefetch current props soon
+                setTimeout(() => prefetchAllCourseAttachments(), 500);
             },
             onError: (errors) => {
                 console.error('Failed to create classwork:', errors);
                 console.error('Full error object:', JSON.stringify(errors, null, 2));
-                // Show error message to user
                 let errorMessage = 'Failed to create classwork:\n\n';
                 if (typeof errors === 'object') {
                     Object.keys(errors).forEach(key => {
@@ -1062,18 +1154,56 @@ const exportCoursePerformance = () => {
 const exportClassStandings = () => {
     window.open(route('teacher.courses.export-class-standings', props.course.id), '_blank');
 };
+
+// ===== Offline prefetch of attachments for the whole course =====
+const prefetchAllCourseAttachments = async () => {
+    try {
+        if (!navigator.onLine) return;
+        const urls = [];
+    (props.classwork || []).forEach(cw => {
+            (cw.attachments || []).forEach(att => {
+                if (att?.path) urls.push(`/storage/${att.path}`);
+                else if (att?.url) urls.push(att.url);
+            });
+        });
+        const unique = Array.from(new Set(urls));
+        if (unique.length === 0) return;
+        const checks = await Promise.all(unique.map(u => isFileCached(u)));
+        const toDownload = unique.filter((u, i) => !checks[i]);
+        if (toDownload.length > 0) {
+            await downloadFiles(toDownload, props.course?.id || null);
+        }
+    } catch (e) {
+        console.warn('Prefetch course attachments (teacher) failed:', e);
+    }
+};
+
+const onClassworksUpdated = () => prefetchAllCourseAttachments();
+
+onMounted(() => {
+    window.addEventListener('app:classworks-updated', onClassworksUpdated);
+    prefetchAllCourseAttachments();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('app:classworks-updated', onClassworksUpdated);
+});
+
+watch(() => props.classwork, () => {
+    prefetchAllCourseAttachments();
+});
 </script>
 
 <template>
     <Head :title="`${course.title} - ${course.section}`" />
 
     <TeacherLayout>
-        <div class="space-y-6">
+        <div class="space-y-6 overflow-x-hidden">
             <!-- Course Header -->
             <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 md:p-8 text-white">
                 <div class="flex justify-between items-start">
                     <div>
-                        <h1 class="text-2xl md:text-3xl font-bold">Course: {{ course.title }} - {{ course.section }}</h1>
+                        <h1 class="text-2xl md:text-3xl font-bold break-words">Course: {{ course.title }} - {{ course.section }}</h1>
                         <div class="mt-2 flex flex-wrap items-center gap-4 text-sm text-blue-100">
                             <span>Section: {{ course.section }}</span>
                             <span>•</span>
@@ -1116,15 +1246,15 @@ const exportClassStandings = () => {
                         <!-- Latest Materials Section (Full width) -->
                         <div class="bg-white rounded-lg shadow-lg overflow-hidden">
                             <!-- Header with Create Button and Filter -->
-                            <div class="bg-gradient-to-r from-red-900 to-red-800 px-6 py-4">
-                                <div class="flex justify-between items-center">
+                            <div class="bg-gradient-to-r from-red-900 to-red-800 px-4 sm:px-6 py-4">
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                     <div>
                                         <h2 class="text-2xl font-bold text-white">Course Materials</h2>
                                         <p class="text-red-100 text-sm mt-1">Manage assignments, quizzes, and course content</p>
                                     </div>
                                     <button 
                                         @click="openClassworkModal"
-                                        class="flex items-center gap-2 px-6 py-3 bg-white text-red-900 rounded-lg hover:bg-gray-50 transition font-semibold shadow-lg transform hover:scale-105"
+                                        class="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-white text-red-900 rounded-lg hover:bg-gray-50 transition font-semibold shadow-lg transform hover:scale-105"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
@@ -1135,12 +1265,12 @@ const exportClassStandings = () => {
                             </div>
 
                             <!-- Filter Bar -->
-                            <div class="bg-gray-50 px-6 py-3 border-b border-gray-200">
-                                <div class="flex items-center gap-3">
+                            <div class="bg-gray-50 px-4 sm:px-6 py-3 border-b border-gray-200">
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
                                     <span class="text-sm font-medium text-gray-700">Filter by:</span>
                                     <select 
                                         v-model="materialFilter"
-                                        class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-red-900 text-sm bg-white"
+                                        class="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-red-900 text-sm bg-white"
                                     >
                                         <option value="all">All Materials</option>
                                         <option value="materials">📚 Materials</option>
@@ -1150,7 +1280,7 @@ const exportClassStandings = () => {
                                         <option value="essays">📄 Essays</option>
                                         <option value="projects">🚀 Projects</option>
                                     </select>
-                                    <div class="ml-auto text-sm text-gray-600">
+                                    <div class="sm:ml-auto text-sm text-gray-600">
                                         <span class="font-semibold">{{ filteredMaterials.length + filteredAnnouncements.length }}</span> items
                                     </div>
                                 </div>
@@ -1182,7 +1312,7 @@ const exportClassStandings = () => {
                                                         <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                                                         </svg>
-                                                        <h3 class="font-semibold text-gray-900">{{ announcement.title }}</h3>
+                                                        <h3 class="font-semibold text-gray-900 break-words">{{ announcement.title }}</h3>
                                                         <span class="px-2 py-0.5 text-xs font-medium rounded uppercase bg-blue-100 text-blue-800">
                                                             Announcement
                                                         </span>
@@ -1190,7 +1320,7 @@ const exportClassStandings = () => {
                                                             All Courses
                                                         </span>
                                                     </div>
-                                                    <p v-if="announcement.description" class="text-sm text-gray-600 mt-2">{{ announcement.description }}</p>
+                                                    <p v-if="announcement.description" class="text-sm text-gray-600 mt-2 break-words">{{ announcement.description }}</p>
                                                     <div class="flex items-center gap-4 mt-3 text-xs text-gray-500">
                                                         <span class="flex items-center gap-1">
                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1222,15 +1352,15 @@ const exportClassStandings = () => {
                                             class="bg-white rounded-lg p-4 border-l-4 shadow hover:shadow-md transition"
                                             :style="{ borderLeftColor: item.color_code || getTypeColor(item.type) }"
                                         >
-                                            <div class="flex items-start justify-between">
+                                            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                                 <div class="flex-1">
                                                     <div class="flex items-center gap-2">
-                                                        <h3 class="font-semibold text-gray-900">{{ item.title }}</h3>
+                                                        <h3 class="font-semibold text-gray-900 break-words">{{ item.title }}</h3>
                                                         <span class="px-2 py-0.5 text-xs font-medium rounded uppercase" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
                                                             {{ item.type }}
                                                         </span>
                                                     </div>
-                                                    <p v-if="item.description" class="text-sm text-gray-600 mt-1">{{ item.description }}</p>
+                                                    <p v-if="item.description" class="text-sm text-gray-600 mt-1 break-words">{{ item.description }}</p>
                                                     <p v-if="item.due_date_formatted" class="text-sm text-gray-600 mt-1">
                                                         Due: {{ item.due_date_formatted }}
                                                     </p>
@@ -1242,7 +1372,7 @@ const exportClassStandings = () => {
                                                         <span class="px-3 py-1 bg-green-500 text-white text-xs rounded-lg">{{ item.graded_count }} graded</span>
                                                     </div>
                                                 </div>
-                                                <div class="flex gap-2">
+                                                <div class="w-full sm:w-auto flex gap-2 mt-3 sm:mt-0 sm:self-start justify-end sm:justify-normal">
                                                     <button 
                                                         @click="viewClasswork(item)" 
                                                         class="p-2 hover:bg-gray-100 rounded" 
@@ -1628,8 +1758,10 @@ const exportClassStandings = () => {
                                         Final Grades PDF
                                     </button>
                                     <button
-                                        @click="exportCoursePerformance"
-                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition font-medium"
+                                        type="button"
+                                        disabled
+                                        aria-disabled="true"
+                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm transition font-medium opacity-50 cursor-not-allowed pointer-events-none"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -1637,8 +1769,10 @@ const exportClassStandings = () => {
                                         Course Performance PDF
                                     </button>
                                     <button
-                                        @click="exportClassStandings"
-                                        class="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm transition font-medium"
+                                        type="button"
+                                        disabled
+                                        aria-disabled="true"
+                                        class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow-sm transition font-medium opacity-50 cursor-not-allowed pointer-events-none"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />

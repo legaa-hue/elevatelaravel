@@ -155,7 +155,8 @@ class OfflineSync {
     async getPendingCount() {
         if (!this.db) await this.init();
 
-        const requests = await this.db.getAllFromIndex('pending-requests', 'synced');
+        // Use all requests; no 'synced' index exists in schema
+        const requests = await this.db.getAll('pending-requests');
         return requests.filter(r => !r.synced).length;
     }
 

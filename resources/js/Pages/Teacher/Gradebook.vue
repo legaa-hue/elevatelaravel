@@ -372,7 +372,8 @@ const saveGradebookForPeriod = async (period) => {
 
     // Handle offline mode
     if (!isOnline.value) {
-        await updateGradebookOffline(payload);
+        // Save with proper signature: (courseId, gradebookData)
+        await updateGradebookOffline(props.course.id, payload);
         alert('✓ Gradebook saved offline. Will sync when online.');
         return;
     }
