@@ -5,8 +5,8 @@
     <title>Grade Sheet - {{ $course->title }}</title>
     <style>
         @page {
-            size: A4 landscape;
-            margin: 1.5cm;
+            size: A4 portrait;
+            margin: 1cm 1.5cm;
         }
 
         * {
@@ -17,184 +17,186 @@
 
         body {
             font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 10pt;
+            font-size: 9pt;
             color: #000;
         }
 
         .header {
-            text-align: center;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 3px solid #000;
-            position: relative;
+            border-bottom: 2px solid #000;
+            display: table;
+            width: 100%;
         }
 
-        .logo-container {
-            position: absolute;
-            left: 0;
-            top: 0;
+        .header-left {
+            display: table-cell;
             width: 80px;
-            height: 80px;
+            vertical-align: middle;
         }
 
         .logo-container img {
-            width: 100%;
-            height: 100%;
+            width: 70px;
+            height: 70px;
             object-fit: contain;
         }
 
-        .header-text {
-            padding-top: 5px;
+        .header-center {
+            display: table-cell;
+            vertical-align: middle;
+            text-align: center;
+            padding: 0 10px;
         }
 
-        .header h1 {
-            font-size: 18pt;
+        .header-center h1 {
+            font-size: 16pt;
             font-weight: bold;
             color: #d32f2f;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
             letter-spacing: 0.5px;
         }
 
-        .header .subtitle {
-            font-size: 9pt;
-            color: #000;
-            margin: 2px 0;
-            font-weight: 600;
+        .header-right {
+            display: table-cell;
+            width: 200px;
+            vertical-align: middle;
+            text-align: right;
         }
 
-        .header h2 {
-            font-size: 16pt;
+        .header-right .subtitle {
+            font-size: 8pt;
+            color: #000;
+            font-weight: 600;
+            line-height: 1.3;
+        }
+
+        .title-section {
+            text-align: center;
+            margin: 10px 0 15px 0;
+        }
+
+        .title-section h2 {
+            font-size: 14pt;
             font-weight: bold;
             color: #000;
-            margin-top: 10px;
-            margin-bottom: 5px;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
         }
 
         .course-info {
             margin-bottom: 15px;
-            padding: 10px 0;
+            font-size: 8pt;
+            line-height: 1.6;
         }
 
-        .course-info table {
-            width: 100%;
-            border-collapse: collapse;
+        .course-info-line {
+            margin-bottom: 3px;
         }
 
-        .course-info td {
-            padding: 3px 0;
-            font-size: 9pt;
-        }
-
-        .course-info td.label {
+        .course-info-line .label {
             font-weight: bold;
-            width: 120px;
-            color: #000;
         }
 
-        .course-info td.value {
-            color: #000;
-        }
-
-        .course-info .section-divider {
-            width: 50px;
-        }
-
-        .grade-table {
+        .student-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
         }
 
-        .grade-table th {
+        .student-table th {
             background-color: #fff;
             color: #000;
             font-weight: bold;
-            padding: 8px 5px;
+            padding: 6px 4px;
             text-align: center;
             border: 1px solid #000;
-            font-size: 9pt;
+            font-size: 8pt;
         }
 
-        .grade-table td {
-            padding: 6px 5px;
+        .student-table td {
+            padding: 4px;
             border: 1px solid #000;
-            font-size: 9pt;
+            font-size: 8pt;
         }
 
-        .grade-table tbody tr:nth-child(even) {
+        .student-table tbody tr:nth-child(even) {
             background-color: #f9fafb;
         }
 
-        .grade-table td.number {
+        .student-table td.number {
             text-align: center;
-            width: 40px;
+            width: 30px;
         }
 
-        .grade-table td.name {
+        .student-table td.name {
             text-align: left;
-            padding-left: 10px;
+            padding-left: 8px;
+            width: 180px;
         }
 
-        .grade-table td.course {
+        .student-table td.course {
             text-align: center;
+            font-size: 7pt;
             width: 120px;
         }
 
-        .grade-table td.grade {
+        .student-table td.grade {
             text-align: center;
-            width: 80px;
+            width: 60px;
             font-weight: 600;
         }
 
-        .grade-table td.remarks {
+        .student-table td.remarks {
             text-align: center;
-            width: 80px;
+            width: 70px;
             font-weight: 600;
         }
 
         .grading-system {
             background-color: #fff;
-            padding: 12px;
+            padding: 10px;
             border: 1px solid #000;
-            margin-bottom: 20px;
+            margin-bottom: 15px;
             page-break-inside: avoid;
         }
 
         .grading-system h3 {
-            font-size: 10pt;
+            font-size: 9pt;
             font-weight: bold;
             margin-bottom: 8px;
             color: #000;
         }
 
-        .grading-system table {
+        .grading-table {
             width: 100%;
             border-collapse: collapse;
         }
 
-        .grading-system td {
-            padding: 2px 5px;
+        .grading-table td {
+            padding: 2px 8px;
             font-size: 8pt;
-            width: 25%;
+            vertical-align: top;
+        }
+
+        .grading-col {
+            width: 33.33%;
+        }
+
+        .grading-row {
+            margin-bottom: 2px;
         }
 
         .signatures {
             margin-top: 30px;
             page-break-inside: avoid;
-            text-align: right;
-        }
-
-        .signature-box {
-            display: inline-block;
             text-align: center;
-            min-width: 250px;
         }
 
         .signature-line {
             border-top: 2px solid #000;
             padding-top: 5px;
             margin-top: 50px;
+            display: inline-block;
+            min-width: 250px;
         }
 
         .signature-name {
@@ -210,69 +212,72 @@
 
         .footer {
             text-align: center;
-            margin-top: 15px;
+            margin-top: 20px;
             padding-top: 10px;
             border-top: 1px solid #ccc;
-            font-size: 8pt;
+            font-size: 7pt;
             color: #666;
         }
 
         .footer-address {
-            margin-bottom: 3px;
+            margin-bottom: 2px;
         }
     </style>
 </head>
 <body>
     <!-- Header -->
     <div class="header">
-        @if(file_exists(public_path('images/usant-logo.png')))
-        <div class="logo-container">
-            <img src="{{ public_path('images/usant-logo.png') }}" alt="University Logo">
+        <div class="header-left">
+            @if(file_exists(public_path('images/usant-logo.png')))
+            <div class="logo-container">
+                <img src="{{ public_path('images/usant-logo.png') }}" alt="University Logo">
+            </div>
+            @endif
         </div>
-        @endif
-        <div class="header-text">
+        <div class="header-center">
             <h1>UNIVERSITY OF SAINT ANTHONY</h1>
-            <div class="subtitle">SCHOOL OF CONTINUING AND PROFESSIONAL STUDIES AND RESEARCH</div>
-            <h2>GRADING SHEET</h2>
         </div>
+        <div class="header-right">
+            <div class="subtitle">
+                SCHOOL OF<br>
+                GRADUATE STUDIES<br>
+                AND RESEARCH
+            </div>
+        </div>
+    </div>
+
+    <!-- Title -->
+    <div class="title-section">
+        <h2>GRADING SHEET</h2>
     </div>
 
     <!-- Course Information -->
     <div class="course-info">
-        <table>
-            <tr>
-                <td class="label">Course Code:</td>
-                <td class="value">{{ $course->section }}</td>
-                <td class="section-divider"></td>
-                <td class="label">Course Name:</td>
-                <td class="value">{{ $course->title }}</td>
-            </tr>
-            <tr>
-                <td class="label">Units:</td>
-                <td class="value">{{ $course->units ?? '3' }}</td>
-                <td class="section-divider"></td>
-                <td class="label">Semester:</td>
-                <td class="value">{{ $semester }}</td>
-            </tr>
-            <tr>
-                <td class="label">School Year:</td>
-                <td class="value">{{ $course->academicYear->year_name ?? $course->academicYear->name ?? 'N/A' }}</td>
-                <td class="section-divider"></td>
-                <td class="label"></td>
-                <td class="value"></td>
-            </tr>
-        </table>
+        <div class="course-info-line">
+            <span class="label">Course Code:</span> {{ $course->section }}
+            &nbsp;&nbsp;&nbsp;&nbsp;
+            <span class="label">Course Name:</span> {{ $course->title }}
+        </div>
+        <div class="course-info-line">
+            <span class="label">Units:</span> {{ $course->units ?? '3' }}
+            &nbsp;&nbsp;
+            <span class="label">Semester:</span> {{ $semester }}
+            &nbsp;&nbsp;
+            <span class="label">Summer:</span> _____
+            &nbsp;&nbsp;
+            <span class="label">School Year:</span> {{ $course->academicYear->year_name ?? $course->academicYear->name ?? 'N/A' }}
+        </div>
     </div>
 
-    <!-- Grade Table -->
-    <table class="grade-table">
+    <!-- Student Table -->
+    <table class="student-table">
         <thead>
             <tr>
-                <th>No.</th>
+                <th>NO</th>
                 <th>NAME OF STUDENTS</th>
                 <th>COURSE</th>
-                <th>MIDTERM</th>
-                <th>FINAL TERM</th>
+                <th>MID-TERM</th>
+                <th>FINAL</th>
                 <th>REMARKS</th>
             </tr>
         </thead>
@@ -288,7 +293,7 @@
             </tr>
             @empty
             <tr>
-                <td colspan="6" style="text-align: center; padding: 20px; color: #666;">
+                <td colspan="6" style="text-align: center; padding: 15px; color: #666;">
                     No students enrolled in this course
                 </td>
             </tr>
@@ -299,79 +304,48 @@
     <!-- Grading System -->
     <div class="grading-system">
         <h3>GRADING SYSTEM:</h3>
-        <table>
+        <table class="grading-table">
             <tr>
-                <td><b>Percent</b></td>
-                <td><b>Grade</b></td>
-                <td><b>Percent</b></td>
-                <td><b>Grade</b></td>
-                <td><b>Percent</b></td>
-                <td><b>Grade</b></td>
-            </tr>
-            <tr>
-                <td>97-100</td>
-                <td>1.00</td>
-                <td>79-81</td>
-                <td>2.50</td>
-                <td>63-65</td>
-                <td>4.00</td>
-            </tr>
-            <tr>
-                <td>94-96</td>
-                <td>1.25</td>
-                <td>76-78</td>
-                <td>2.75</td>
-                <td>60-62</td>
-                <td>4.25</td>
-            </tr>
-            <tr>
-                <td>91-93</td>
-                <td>1.50</td>
-                <td>75</td>
-                <td>3.00</td>
-                <td>57-59</td>
-                <td>4.50</td>
-            </tr>
-            <tr>
-                <td>88-90</td>
-                <td>1.75</td>
-                <td>72-74</td>
-                <td>3.25</td>
-                <td>54-56</td>
-                <td>4.75</td>
-            </tr>
-            <tr>
-                <td>85-87</td>
-                <td>2.00</td>
-                <td>69-71</td>
-                <td>3.50</td>
-                <td>Below 54</td>
-                <td>5.00</td>
-            </tr>
-            <tr>
-                <td>82-84</td>
-                <td>2.25</td>
-                <td>66-68</td>
-                <td>3.75</td>
-                <td></td>
-                <td></td>
+                <td class="grading-col">
+                    <div class="grading-row"><b>Percent</b> &nbsp; <b>Grade</b></div>
+                    <div class="grading-row">100 &nbsp;&nbsp;&nbsp;&nbsp; 1.0</div>
+                    <div class="grading-row">99 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.15</div>
+                    <div class="grading-row">98 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.2</div>
+                    <div class="grading-row">97 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.25</div>
+                    <div class="grading-row">96 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.3</div>
+                </td>
+                <td class="grading-col">
+                    <div class="grading-row"><b>Percent</b> &nbsp; <b>Grade</b></div>
+                    <div class="grading-row">95 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.35</div>
+                    <div class="grading-row">94 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.4</div>
+                    <div class="grading-row">93 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.45</div>
+                    <div class="grading-row">92 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.5</div>
+                    <div class="grading-row">91 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.55</div>
+                </td>
+                <td class="grading-col">
+                    <div class="grading-row"><b>Percent</b> &nbsp; <b>Grade</b></div>
+                    <div class="grading-row">90 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.6</div>
+                    <div class="grading-row">89 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.65</div>
+                    <div class="grading-row">88 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.7</div>
+                    <div class="grading-row">87 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.75</div>
+                    <div class="grading-row">86 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.8</div>
+                    <div class="grading-row">85 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp; 1.85</div>
+                </td>
             </tr>
         </table>
     </div>
 
     <!-- Signatures -->
     <div class="signatures">
-        <div class="signature-box">
-            <div class="signature-line">
-                <div class="signature-name">
-                    @if($course->teacher)
-                        {{ strtoupper($course->teacher->first_name ?? '') }} {{ strtoupper($course->teacher->last_name ?? '') }}
-                    @else
-                        &nbsp;
-                    @endif
-                </div>
-                <div class="signature-title">Professor</div>
+        <div class="signature-line">
+            <div class="signature-name">
+                @if($course->teacher)
+                    {{ strtoupper($course->teacher->first_name ?? '') }} {{ strtoupper($course->teacher->last_name ?? '') }}
+                @else
+                    &nbsp;
+                @endif
             </div>
+            <div class="signature-title">Professor</div>
         </div>
     </div>
 
