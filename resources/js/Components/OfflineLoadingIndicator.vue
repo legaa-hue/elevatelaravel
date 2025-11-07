@@ -47,27 +47,21 @@ const hideIndicator = () => {
 };
 
 onMounted(() => {
-    router.on('start', showIndicator);
-    router.on('finish', hideIndicator);
-});
-
-onUnmounted(() => {
-    router.off('start', showIndicator);
-    router.off('finish', hideIndicator);
-    if (timeout) clearTimeout(timeout);
+    // router.on() returns a cleanup function, store them
     removeStartListener = router.on('start', showIndicator);
     removeFinishListener = router.on('finish', hideIndicator);
-    
+
     // Listen for online/offline events
     window.addEventListener('online', updateOnlineStatus);
     window.addEventListener('offline', updateOnlineStatus);
 });
 
 onUnmounted(() => {
+    // Call cleanup functions returned by router.on()
     if (removeStartListener) removeStartListener();
     if (removeFinishListener) removeFinishListener();
     if (timeout) clearTimeout(timeout);
-    
+
     window.removeEventListener('online', updateOnlineStatus);
     window.removeEventListener('offline', updateOnlineStatus);
 });
