@@ -109,8 +109,12 @@ const downloadPdfWithSemester = () => {
 };
 
 const downloadPdf = () => {
-  if (selectedCourse.value) {
-    openSemesterSelection(selectedCourse.value, 'download');
+  if (selectedCourse.value && selectedSemester.value) {
+    // Use the semester already selected when viewing the PDF
+    window.location.href = route('teacher.class-record.grade-sheet.download', {
+      course: selectedCourse.value.id,
+      semester: selectedSemester.value
+    });
   }
 };
 
@@ -393,12 +397,13 @@ onUnmounted(() => {
                   class="w-full h-full border-0"
                   title="Grade Sheet PDF"
                 />
-                <div v-else class="flex items-center justify-center h-full">
-                  <div class="text-center">
-                    <svg class="w-16 h-16 mx-auto text-gray-400 mb-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div v-else class="flex items-center justify-center h-full bg-gray-50">
+                  <div class="text-center px-4">
+                    <svg class="w-20 h-20 mx-auto text-red-900 mb-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
-                    <p class="text-gray-600">Loading PDF...</p>
+                    <p class="text-gray-900 font-semibold text-lg mb-2">Generating Grade Sheet...</p>
+                    <p class="text-gray-600 text-sm">This may take a few moments while we calculate grades and prepare your PDF.</p>
                   </div>
                 </div>
               </div>
