@@ -40,31 +40,102 @@
             </div>
 
             <!-- Pending Actions Indicator (when online but has pending) -->
-            <div v-else-if="isOnline && pendingActionsCount > 0" 
-                 class="bg-yellow-600 text-white px-3 py-2 rounded-lg shadow-lg flex items-center space-x-2 cursor-pointer text-xs"
-                 @click="$emit('retry-sync')">
+            <div v-else-if="isOnline && pendingActionsCount > 0"
+                 class="bg-yellow-600 text-white px-3 py-2 rounded-lg shadow-lg flex items-center space-x-2 text-xs">
                 <span class="material-icons text-sm">cloud_upload</span>
                 <div class="flex-1">
                     <p class="font-semibold">{{ pendingActionsCount }} pending</p>
                 </div>
+                <button @click="showSyncManager = true" class="text-white hover:text-gray-200 text-xs px-2 py-1 bg-black bg-opacity-20 rounded">
+                    Manage
+                </button>
+            </div>
+
+            <!-- Storage Warning (when near limit) -->
+            <div v-else-if="isNearLimit"
+                 :class="[
+                     'px-3 py-2 rounded-lg shadow-lg flex items-center space-x-2 text-xs mt-2',
+                     isAtLimit ? 'bg-red-600 text-white' : 'bg-orange-500 text-white'
+                 ]">
+                <span class="material-icons text-sm">storage</span>
+                <div class="flex-1">
+                    <p class="font-semibold">Storage {{ isAtLimit ? 'Full' : 'High' }}</p>
+                    <p class="text-[10px] opacity-90">{{ usageFormatted }} / {{ quotaFormatted }} ({{ usagePercentage }}%)</p>
+                </div>
+                <button @click="clearCache" class="text-white hover:text-gray-200 text-[10px] px-2 py-1 bg-black bg-opacity-20 rounded">
+                    Clear
+                </button>
             </div>
         </div>
     </Transition>
+
+    <!-- Sync Manager Modal -->
+    <OfflineSyncManager
+        :show="showSyncManager"
+        @close="showSyncManager = false"
+        @sync-all="handleSyncAll" />
 </template>
 
 <script setup>
-import { computed } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useOfflineSync } from '../composables/useOfflineSync';
+import { useStorageQuota } from '../composables/useStorageQuota';
+import OfflineSyncManager from './OfflineSyncManager.vue';
 
 const {
     isOnline,
     isSyncing,
     syncStatus,
-    pendingActionsCount
+    pendingActionsCount,
+    syncPendingActions
 } = useOfflineSync();
 
+const {
+    usagePercentage,
+    usageFormatted,
+    quotaFormatted,
+    isNearLimit,
+    isAtLimit,
+    clearOldCache,
+    startMonitoring,
+    stopMonitoring
+} = useStorageQuota();
+
+let quotaMonitorInterval = null;
+const showSyncManager = ref(false);
+
 const showIndicator = computed(() => {
-    return !isOnline.value || isSyncing.value || syncStatus.value || pendingActionsCount.value > 0;
+    return !isOnline.value ||
+           isSyncing.value ||
+           syncStatus.value ||
+           pendingActionsCount.value > 0 ||
+           isNearLimit.value;
+});
+
+const clearCache = async () => {
+    try {
+        await clearOldCache();
+        console.log('✅ Cache cleared successfully');
+    } catch (error) {
+        console.error('Failed to clear cache:', error);
+    }
+};
+
+const handleSyncAll = async () => {
+    try {
+        await syncPendingActions();
+    } catch (error) {
+        console.error('Failed to sync all actions:', error);
+    }
+};
+
+onMounted(() => {
+    // Start monitoring storage quota every minute
+    quotaMonitorInterval = startMonitoring(60000);
+});
+
+onUnmounted(() => {
+    stopMonitoring(quotaMonitorInterval);
 });
 
 defineEmits(['retry-sync']);

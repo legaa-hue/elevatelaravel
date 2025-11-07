@@ -3,7 +3,9 @@ import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
-// import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue'; // Disabled for debugging
+import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
+import OfflineLoadingIndicator from '@/Components/OfflineLoadingIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
 
 const page = usePage();
 // Toast notification for email verification
@@ -301,7 +303,7 @@ onUnmounted(() => {
 
 <template>
     <!-- Install PWA Prompt -->
-    <!-- <InstallPWAPrompt /> -->
+    <InstallPWAPrompt />
     
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile Sidebar Overlay -->
@@ -742,4 +744,8 @@ onUnmounted(() => {
             </div>
         </div>
     </div>
+
+    <!-- Offline Indicators -->
+    <OfflineSyncIndicator />
+    <OfflineLoadingIndicator />
 </template>

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Traits\HasVersioning;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -10,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
 
 class Classwork extends Model
 {
-    use HasFactory;
+    use HasFactory, HasVersioning;
 
     protected $table = 'classwork';
 
@@ -31,6 +32,7 @@ class Classwork extends Model
         'grade_table_name',
         'grade_main_column',
         'grade_sub_column',
+        'version',
     ];
 
     protected $casts = [

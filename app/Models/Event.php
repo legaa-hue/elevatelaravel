@@ -2,11 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\HasVersioning;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class Event extends Model
 {
+    use HasVersioning;
+
     protected $fillable = [
         'user_id',
         'course_id',
@@ -19,6 +22,7 @@ class Event extends Model
         'color',
         'visibility',
         'target_audience',
+        'version',
     ];
 
     protected $casts = [

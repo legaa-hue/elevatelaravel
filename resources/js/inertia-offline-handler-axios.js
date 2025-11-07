@@ -11,6 +11,8 @@ class InertiaOfflineHandlerAxios {
     constructor() {
         this.componentCache = new Map();
         this.interceptorId = null;
+        this.loadingComponents = new Set();
+        this.failedComponents = new Set();
     }
 
     /**
@@ -18,14 +20,51 @@ class InertiaOfflineHandlerAxios {
      */
     cacheComponent(name, componentModule) {
         this.componentCache.set(name, componentModule);
+        this.failedComponents.delete(name);
         console.log(`💾 Cached component: ${name}`);
     }
-    
+
     /**
      * Get cached component
      */
     getCachedComponent(name) {
         return this.componentCache.get(name);
+    }
+
+    /**
+     * Check if component is currently loading
+     */
+    isComponentLoading(name) {
+        return this.loadingComponents.has(name);
+    }
+
+    /**
+     * Mark component as loading
+     */
+    markComponentLoading(name) {
+        this.loadingComponents.add(name);
+    }
+
+    /**
+     * Mark component loading complete
+     */
+    markComponentLoadingComplete(name) {
+        this.loadingComponents.delete(name);
+    }
+
+    /**
+     * Mark component as failed
+     */
+    markComponentFailed(name) {
+        this.failedComponents.add(name);
+        this.loadingComponents.delete(name);
+    }
+
+    /**
+     * Check if component failed to load
+     */
+    hasComponentFailed(name) {
+        return this.failedComponents.has(name);
     }
 
     /**

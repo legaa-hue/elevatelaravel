@@ -2,17 +2,19 @@
 
 namespace App\Models;
 
+use App\Traits\HasVersioning;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Program extends Model
 {
-    use HasFactory;
+    use HasFactory, HasVersioning;
 
     protected $fillable = [
         'name',
         'description',
         'status',
+        'version',
     ];
 
     /**

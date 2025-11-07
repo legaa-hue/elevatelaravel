@@ -12,6 +12,8 @@ export function useOfflineSync() {
     const syncStatus = ref(null);
     const pendingActionsCount = ref(0);
     const lastSyncTime = ref(null);
+    const syncProgress = ref({ current: 0, total: 0 });
+    const pendingActions = ref([]);
 
     // Update online status
     const updateOnlineStatus = () => {
@@ -34,26 +36,33 @@ export function useOfflineSync() {
             globalIsSyncing = true;
             syncStatus.value = { type: 'syncing', message: 'Syncing data...' };
 
-            const pendingActions = await offlineStorage.getPendingActions();
-            
-            if (pendingActions.length === 0) {
+            const actions = await offlineStorage.getPendingActions();
+
+            if (actions.length === 0) {
                 isSyncing.value = false;
+                syncProgress.value = { current: 0, total: 0 };
                 return;
             }
 
-            console.log(`🔄 Syncing ${pendingActions.length} pending actions...`);
+            // Initialize progress
+            syncProgress.value = { current: 0, total: actions.length };
+
+            console.log(`🔄 Syncing ${actions.length} pending actions...`);
 
             let successCount = 0;
             let failCount = 0;
+            const failedActions = [];
             // Track if current page should refresh specific props after sync
             let shouldReloadClassworks = false;
             let shouldReloadGradebook = false;
 
-            for (const action of pendingActions) {
+            for (const action of actions) {
                 try {
                     await processPendingAction(action);
                     await offlineStorage.markActionSynced(action.id);
                     successCount++;
+                    syncProgress.value.current++;
+
                     // If any action affects classworks/materials, mark for reload
                     if ([
                         'create_classwork',
@@ -69,6 +78,8 @@ export function useOfflineSync() {
                 } catch (error) {
                     console.error('Failed to sync action:', action, error);
                     failCount++;
+                    syncProgress.value.current++;
+                    failedActions.push({ action, error: error.message });
                 }
             }
 
@@ -567,6 +578,83 @@ export function useOfflineSync() {
         pendingActionsCount.value = actions.length;
     };
 
+    // Get pending actions with human-readable labels
+    const getPendingActionsList = async () => {
+        const actions = await offlineStorage.getPendingActions();
+        pendingActions.value = actions.map(action => ({
+            ...action,
+            label: getActionLabel(action.type, action.data),
+            icon: getActionIcon(action.type)
+        }));
+        return pendingActions.value;
+    };
+
+    // Get human-readable label for action type
+    const getActionLabel = (type, data) => {
+        const labels = {
+            create_course: `Create Course: ${data.name || 'New Course'}`,
+            update_course: `Update Course: ${data.name || 'Course'}`,
+            create_event: `Create Event: ${data.title || 'New Event'}`,
+            update_event: `Update Event: ${data.title || 'Event'}`,
+            delete_event: `Delete Event`,
+            create_classwork: `Create ${data.type || 'Classwork'}: ${data.title || 'New'}`,
+            update_classwork: `Update Classwork: ${data.title || 'Classwork'}`,
+            create_material: `Create Material: ${data.title || 'New Material'}`,
+            submit_classwork: `Submit Classwork`,
+            update_gradebook: `Update Gradebook`,
+            grade_submission: `Grade Submission`,
+            custom: `Custom Action`
+        };
+        return labels[type] || type;
+    };
+
+    // Get icon for action type
+    const getActionIcon = (type) => {
+        const icons = {
+            create_course: 'add_circle',
+            update_course: 'edit',
+            create_event: 'event',
+            update_event: 'edit_calendar',
+            delete_event: 'event_busy',
+            create_classwork: 'assignment',
+            update_classwork: 'edit_note',
+            create_material: 'folder',
+            submit_classwork: 'send',
+            update_gradebook: 'grade',
+            grade_submission: 'grading',
+            custom: 'settings'
+        };
+        return icons[type] || 'cloud_upload';
+    };
+
+    // Retry a specific action
+    const retryAction = async (actionId) => {
+        const actions = await offlineStorage.getPendingActions();
+        const action = actions.find(a => a.id === actionId);
+
+        if (!action) {
+            throw new Error('Action not found');
+        }
+
+        try {
+            await processPendingAction(action);
+            await offlineStorage.markActionSynced(action.id);
+            await updatePendingCount();
+            await getPendingActionsList();
+            return { success: true };
+        } catch (error) {
+            console.error('Failed to retry action:', action, error);
+            throw error;
+        }
+    };
+
+    // Delete a specific pending action
+    const deleteAction = async (actionId) => {
+        await offlineStorage.markActionSynced(actionId);
+        await updatePendingCount();
+        await getPendingActionsList();
+    };
+
     // Save action for later sync
     const saveOfflineAction = async (type, data, endpoint = null, method = 'POST') => {
         // Attach idempotency token if missing
@@ -664,6 +752,8 @@ export function useOfflineSync() {
         syncStatus,
         pendingActionsCount,
         lastSyncTime,
+        syncProgress,
+        pendingActions,
         statusColor,
         statusIcon,
         syncPendingActions,
@@ -672,6 +762,9 @@ export function useOfflineSync() {
         getCachedData,
         cacheData,
         updatePendingCount,
-        savePendingFiles
+        savePendingFiles,
+        getPendingActionsList,
+        retryAction,
+        deleteAction
     };
 }

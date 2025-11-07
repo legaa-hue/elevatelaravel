@@ -47,31 +47,90 @@ router.on('success', async (event) => {
     }
 });
 
+// Create a fallback component for offline mode when component is not cached
+function createFallbackComponent(componentName) {
+    return {
+        default: {
+            name: 'OfflineFallback',
+            template: `
+                <div class="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+                    <div class="max-w-md w-full bg-white rounded-lg shadow-lg p-6 text-center">
+                        <div class="mb-4">
+                            <span class="material-icons text-6xl text-gray-400">cloud_off</span>
+                        </div>
+                        <h1 class="text-2xl font-bold text-gray-900 mb-2">Page Not Available Offline</h1>
+                        <p class="text-gray-600 mb-4">
+                            The page "${componentName}" hasn't been cached yet and is not available offline.
+                        </p>
+                        <p class="text-sm text-gray-500 mb-6">
+                            Please connect to the internet and visit this page while online to cache it for offline use.
+                        </p>
+                        <button
+                            @click="$inertia.visit('/')"
+                            class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-colors">
+                            Go to Dashboard
+                        </button>
+                    </div>
+                </div>
+            `
+        }
+    };
+}
+
 createInertiaApp({
     title: (title) => `${title} - ${appName}`,
     resolve: async (name) => {
-        // When offline, check component cache first
-        if (!navigator.onLine && inertiaOfflineHandler) {
-            const cached = inertiaOfflineHandler.getCachedComponent(name);
-            if (cached) {
-                console.log(`📦 Using offline cached component: ${name}`);
-                return cached;
+        try {
+            // When offline, check component cache first
+            if (!navigator.onLine && inertiaOfflineHandler) {
+                const cached = inertiaOfflineHandler.getCachedComponent(name);
+                if (cached) {
+                    console.log(`📦 Using offline cached component: ${name}`);
+                    return cached;
+                }
+
+                // Check if this component has failed before
+                if (inertiaOfflineHandler.hasComponentFailed(name)) {
+                    console.warn(`⚠️ Component ${name} previously failed to load, returning fallback`);
+                    return createFallbackComponent(name);
+                }
+
+                console.warn(`⚠️ Component ${name} not in offline cache, attempting to load...`);
             }
-            console.warn(`⚠️ Component ${name} not in offline cache, attempting to load...`);
+
+            // Mark as loading
+            if (inertiaOfflineHandler) {
+                inertiaOfflineHandler.markComponentLoading(name);
+            }
+
+            // Online or not cached - resolve normally
+            const component = await resolvePageComponent(
+                `./Pages/${name}.vue`,
+                import.meta.glob('./Pages/**/*.vue'),
+            );
+
+            // Cache it for offline use
+            if (inertiaOfflineHandler) {
+                inertiaOfflineHandler.cacheComponent(name, component);
+                inertiaOfflineHandler.markComponentLoadingComplete(name);
+            }
+
+            return component;
+        } catch (error) {
+            console.error(`❌ Failed to resolve component ${name}:`, error);
+
+            // Mark component as failed
+            if (inertiaOfflineHandler) {
+                inertiaOfflineHandler.markComponentFailed(name);
+            }
+
+            // If offline and component doesn't exist, return fallback
+            if (!navigator.onLine) {
+                return createFallbackComponent(name);
+            }
+
+            throw error;
         }
-        
-        // Online or not cached - resolve normally
-        const component = await resolvePageComponent(
-            `./Pages/${name}.vue`,
-            import.meta.glob('./Pages/**/*.vue'),
-        );
-        
-        // Cache it for offline use
-        if (inertiaOfflineHandler) {
-            inertiaOfflineHandler.cacheComponent(name, component);
-        }
-        
-        return component;
     },
     setup({ el, App, props, plugin }) {
         const app = createApp({ render: () => h(App, props) })
@@ -161,7 +220,7 @@ if ('serviceWorker' in navigator) {
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
         try {
-            const swUrl = `/service-worker.js?v=${Date.now()}`; // cache-bust
+            const swUrl = `/sw.js?v=${Date.now()}`; // cache-bust
             console.log('🔧 Window loaded, registering SW from', swUrl);
             const registration = await navigator.serviceWorker.register(swUrl, {
                 scope: '/'

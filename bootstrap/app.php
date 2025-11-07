@@ -24,6 +24,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'admin' => \App\Http\Middleware\EnsureUserIsAdmin::class,
             'teacher' => \App\Http\Middleware\TeacherMiddleware::class,
             'student' => \App\Http\Middleware\StudentMiddleware::class,
+            'check.version' => \App\Http\Middleware\CheckVersionConflict::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

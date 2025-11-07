@@ -19,7 +19,7 @@ return new class extends Migration
         Schema::connection($connection)->create($tableName, function (Blueprint $table) {
             $table->bigIncrements('id');
             $table->morphs('subscribable');
-            $table->string('endpoint', 500)->unique();
+            $table->string('endpoint', 191)->unique();
             $table->string('public_key')->nullable();
             $table->string('auth_token')->nullable();
             $table->string('content_encoding')->nullable();

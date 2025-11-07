@@ -2,6 +2,9 @@
 import { ref, onMounted, computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
+import OfflineLoadingIndicator from '@/Components/OfflineLoadingIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
 import axios from 'axios';
 
 const sidebarOpen = ref(true);
@@ -178,8 +181,8 @@ const isCurrentRoute = (routeName) => {
 </script>
 
 <template>
-    <!-- Install PWA Prompt (Disabled for debugging) -->
-    <!-- <InstallPWAPrompt /> -->
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
     
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile overlay when sidebar open -->
@@ -405,6 +408,10 @@ const isCurrentRoute = (routeName) => {
             </main>
         </div>
     </div>
+
+    <!-- Offline Indicators -->
+    <OfflineSyncIndicator />
+    <OfflineLoadingIndicator />
 </template>
 
 <style scoped>

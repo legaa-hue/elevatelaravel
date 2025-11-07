@@ -4,7 +4,8 @@ import { Link, usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
 import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
-// import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue'; // Disabled for debugging
+import OfflineLoadingIndicator from '@/Components/OfflineLoadingIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
 import { useOfflineSync } from '@/composables/useOfflineSync';
 import offlineStorage from '@/offline-storage';
 
@@ -551,8 +552,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <!-- Install PWA Prompt (Disabled for debugging) -->
-    <!-- <InstallPWAPrompt /> -->
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
     
     <div class="min-h-screen bg-gray-50 overflow-x-hidden">
         <!-- Offline Sync Indicator -->
@@ -1182,6 +1183,10 @@ onUnmounted(() => {
             </div>
         </div>
     </div>
+
+    <!-- Offline Indicators -->
+    <OfflineSyncIndicator @retry-sync="handleRetrySync" />
+    <OfflineLoadingIndicator />
 </template>
 
 <style scoped>
