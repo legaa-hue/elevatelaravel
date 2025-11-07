@@ -34,6 +34,7 @@ const allCourses = computed(() => {
 const showPdfModal = ref(false);
 const selectedCourse = ref(null);
 const pdfUrl = ref('');
+const pdfLoading = ref(false);
 
 // Semester selection modal
 const showSemesterModal = ref(false);
@@ -72,6 +73,7 @@ const viewGradeSheetWithSemester = async () => {
   if (!isOnline.value) {
     const cached = await getCachedFile(`grade-sheet-${course.id}.pdf`);
     if (cached) {
+      pdfLoading.value = true;
       pdfUrl.value = URL.createObjectURL(cached);
       showPdfModal.value = true;
       return;
@@ -80,6 +82,7 @@ const viewGradeSheetWithSemester = async () => {
     return;
   }
 
+  pdfLoading.value = true;
   pdfUrl.value = route('teacher.class-record.grade-sheet.pdf', { course: course.id, semester });
   showPdfModal.value = true;
 
@@ -92,10 +95,15 @@ const viewGradeSheet = async (course) => {
   openSemesterSelection(course, 'view');
 };
 
+const onPdfLoad = () => {
+  pdfLoading.value = false;
+};
+
 const closePdfModal = () => {
   showPdfModal.value = false;
   pdfUrl.value = '';
   selectedCourse.value = null;
+  pdfLoading.value = false;
 };
 
 const downloadPdfWithSemester = () => {
@@ -390,14 +398,15 @@ onUnmounted(() => {
               </div>
 
               <!-- PDF Viewer -->
-              <div class="flex-1 overflow-hidden bg-gray-100 rounded-b-2xl">
+              <div class="flex-1 overflow-hidden bg-gray-100 rounded-b-2xl relative">
                 <iframe
                   v-if="pdfUrl"
                   :src="pdfUrl"
+                  @load="onPdfLoad"
                   class="w-full h-full border-0"
                   title="Grade Sheet PDF"
                 />
-                <div v-else class="flex items-center justify-center h-full bg-gray-50">
+                <div v-if="!pdfUrl || pdfLoading" class="absolute inset-0 flex items-center justify-center bg-gray-50">
                   <div class="text-center px-4">
                     <svg class="w-20 h-20 mx-auto text-red-900 mb-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
