@@ -81,8 +81,11 @@ class GradeSheetController extends Controller
         ]);
     }
 
-    public function downloadPdf(Course $course)
+    public function downloadPdf(Request $request, Course $course)
     {
+        // Get semester from request (default to "Second Semester" if not provided)
+        $semester = $request->input('semester', 'Second Semester');
+
         // Get enrolled students with their grades
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -145,10 +148,15 @@ class GradeSheetController extends Controller
         // Load course with relationships
         $course->load(['teacher', 'academicYear', 'program']);
 
+        // Get program name for display in Course column
+        $programName = $course->program ? $course->program->name : 'N/A';
+
         // Generate PDF
         $pdf = Pdf::loadView('pdf.grade-sheet', [
             'course' => $course,
             'students' => $studentsWithGrades,
+            'semester' => $semester,
+            'programName' => $programName,
         ]);
 
         // Set paper size to landscape A4
@@ -156,12 +164,15 @@ class GradeSheetController extends Controller
 
         // Download the PDF
         $filename = 'GradeSheet_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
-        
+
         return $pdf->download($filename);
     }
 
-    public function viewPdf(Course $course)
+    public function viewPdf(Request $request, Course $course)
     {
+        // Get semester from request (default to "Second Semester" if not provided)
+        $semester = $request->input('semester', 'Second Semester');
+
         // Get enrolled students with their grades (same logic as downloadPdf)
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -217,10 +228,15 @@ class GradeSheetController extends Controller
 
         $course->load(['teacher', 'academicYear', 'program']);
 
+        // Get program name for display in Course column
+        $programName = $course->program ? $course->program->name : 'N/A';
+
         // Generate PDF for viewing
         $pdf = Pdf::loadView('pdf.grade-sheet', [
             'course' => $course,
             'students' => $studentsWithGrades,
+            'semester' => $semester,
+            'programName' => $programName,
         ]);
 
         $pdf->setPaper('a4', 'landscape');

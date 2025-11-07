@@ -8,244 +8,258 @@
             size: A4 landscape;
             margin: 1.5cm;
         }
-        
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
+
         body {
             font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 11pt;
+            font-size: 10pt;
             color: #000;
         }
-        
+
         .header {
             text-align: center;
             margin-bottom: 20px;
-            padding-bottom: 15px;
-            border-bottom: 4px solid #7f1d1d;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #000;
+            position: relative;
         }
-        
+
+        .logo-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 80px;
+            height: 80px;
+        }
+
+        .logo-container img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .header-text {
+            padding-top: 5px;
+        }
+
         .header h1 {
-            font-size: 22pt;
+            font-size: 18pt;
             font-weight: bold;
-            color: #7f1d1d;
-            margin-bottom: 5px;
+            color: #d32f2f;
+            margin-bottom: 3px;
+            letter-spacing: 0.5px;
         }
-        
+
         .header .subtitle {
-            font-size: 11pt;
-            color: #333;
-            margin: 3px 0;
-        }
-        
-        .header .subtitle.bold {
-            font-weight: bold;
-        }
-        
-        .header h2 {
-            font-size: 20pt;
-            font-weight: bold;
-            color: #7f1d1d;
-            margin-top: 15px;
-            margin-bottom: 5px;
-        }
-        
-        .header .academic-year {
-            font-size: 12pt;
-            color: #555;
+            font-size: 9pt;
+            color: #000;
+            margin: 2px 0;
             font-weight: 600;
         }
-        
-        .course-info {
-            background-color: #f9fafb;
-            padding: 15px 20px;
-            margin-bottom: 20px;
-            border: 1px solid #ddd;
+
+        .header h2 {
+            font-size: 16pt;
+            font-weight: bold;
+            color: #000;
+            margin-top: 10px;
+            margin-bottom: 5px;
+            letter-spacing: 1px;
         }
-        
+
+        .course-info {
+            margin-bottom: 15px;
+            padding: 10px 0;
+        }
+
         .course-info table {
             width: 100%;
             border-collapse: collapse;
         }
-        
+
         .course-info td {
-            padding: 5px 0;
-            font-size: 10pt;
+            padding: 3px 0;
+            font-size: 9pt;
         }
-        
+
         .course-info td.label {
             font-weight: bold;
-            width: 150px;
-            color: #333;
+            width: 120px;
+            color: #000;
         }
-        
+
         .course-info td.value {
             color: #000;
         }
-        
+
+        .course-info .section-divider {
+            width: 50px;
+        }
+
         .grade-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 20px;
         }
-        
+
         .grade-table th {
-            background-color: #7f1d1d;
-            color: white;
+            background-color: #fff;
+            color: #000;
             font-weight: bold;
-            padding: 10px 8px;
+            padding: 8px 5px;
             text-align: center;
-            border: 2px solid #000;
-            font-size: 10pt;
+            border: 1px solid #000;
+            font-size: 9pt;
         }
-        
+
         .grade-table td {
-            padding: 8px;
-            border: 1px solid #666;
-            font-size: 10pt;
+            padding: 6px 5px;
+            border: 1px solid #000;
+            font-size: 9pt;
         }
-        
+
         .grade-table tbody tr:nth-child(even) {
             background-color: #f9fafb;
         }
-        
+
         .grade-table td.number {
             text-align: center;
-            font-weight: 600;
             width: 40px;
         }
-        
+
         .grade-table td.name {
             text-align: left;
-            font-weight: 600;
+            padding-left: 10px;
         }
-        
+
+        .grade-table td.course {
+            text-align: center;
+            width: 120px;
+        }
+
         .grade-table td.grade {
             text-align: center;
-            font-weight: bold;
-            font-size: 11pt;
-        }
-        
-        .grade-table td.final-grade {
-            text-align: center;
-            font-weight: bold;
-            font-size: 12pt;
-            color: #1d4ed8;
-        }
-        
-        .grade-table td.letter-grade {
-            text-align: center;
-            font-weight: bold;
-            font-size: 12pt;
-            color: #15803d;
-        }
-        
-        .grade-table td.remarks {
-            text-align: center;
+            width: 80px;
             font-weight: 600;
         }
-        
+
+        .grade-table td.remarks {
+            text-align: center;
+            width: 80px;
+            font-weight: 600;
+        }
+
         .grading-system {
-            background-color: #f9fafb;
-            padding: 15px;
-            border: 2px solid #ddd;
+            background-color: #fff;
+            padding: 12px;
+            border: 1px solid #000;
             margin-bottom: 20px;
             page-break-inside: avoid;
         }
-        
+
         .grading-system h3 {
-            font-size: 11pt;
+            font-size: 10pt;
             font-weight: bold;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
             color: #000;
         }
-        
+
         .grading-system table {
             width: 100%;
             border-collapse: collapse;
         }
-        
+
         .grading-system td {
-            padding: 3px 5px;
-            font-size: 9pt;
+            padding: 2px 5px;
+            font-size: 8pt;
             width: 25%;
         }
-        
+
         .signatures {
-            margin-top: 40px;
+            margin-top: 30px;
             page-break-inside: avoid;
+            text-align: right;
         }
-        
-        .signatures table {
-            width: 100%;
-            border-collapse: collapse;
-        }
-        
-        .signatures td {
+
+        .signature-box {
+            display: inline-block;
             text-align: center;
-            vertical-align: bottom;
-            width: 33.33%;
-            padding: 0 20px;
+            min-width: 250px;
         }
-        
+
         .signature-line {
             border-top: 2px solid #000;
-            padding-top: 8px;
-            margin-top: 60px;
+            padding-top: 5px;
+            margin-top: 50px;
         }
-        
+
         .signature-name {
             font-weight: bold;
             font-size: 10pt;
-            margin-bottom: 3px;
+            margin-bottom: 2px;
         }
-        
+
         .signature-title {
             font-size: 9pt;
-            color: #555;
+            color: #000;
         }
-        
+
         .footer {
             text-align: center;
-            margin-top: 20px;
-            font-size: 9pt;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #ccc;
+            font-size: 8pt;
             color: #666;
+        }
+
+        .footer-address {
+            margin-bottom: 3px;
         }
     </style>
 </head>
 <body>
     <!-- Header -->
     <div class="header">
-        <h1>PHILIPPINE CHRISTIAN UNIVERSITY</h1>
-        <div class="subtitle">Taft Avenue, Manila</div>
-        <div class="subtitle bold">GRADUATE SCHOOL</div>
-        <h2>GRADING SHEET</h2>
-        <div class="academic-year">{{ $course->academicYear->name ?? 'Academic Year' }}</div>
+        @if(file_exists(public_path('images/usant-logo.png')))
+        <div class="logo-container">
+            <img src="{{ public_path('images/usant-logo.png') }}" alt="University Logo">
+        </div>
+        @endif
+        <div class="header-text">
+            <h1>UNIVERSITY OF SAINT ANTHONY</h1>
+            <div class="subtitle">SCHOOL OF CONTINUING AND PROFESSIONAL STUDIES AND RESEARCH</div>
+            <h2>GRADING SHEET</h2>
+        </div>
     </div>
 
     <!-- Course Information -->
     <div class="course-info">
         <table>
             <tr>
-                <td class="label">Course Title:</td>
-                <td class="value">{{ $course->title }}</td>
                 <td class="label">Course Code:</td>
                 <td class="value">{{ $course->section }}</td>
+                <td class="section-divider"></td>
+                <td class="label">Course Name:</td>
+                <td class="value">{{ $course->title }}</td>
             </tr>
             <tr>
-                <td class="label">Instructor:</td>
-                <td class="value">{{ $course->teacher->first_name }} {{ $course->teacher->last_name }}</td>
-                <td class="label">Program:</td>
-                <td class="value">{{ $course->program->name ?? 'N/A' }}</td>
+                <td class="label">Units:</td>
+                <td class="value">{{ $course->units ?? '3' }}</td>
+                <td class="section-divider"></td>
+                <td class="label">Semester:</td>
+                <td class="value">{{ $semester }}</td>
             </tr>
             <tr>
-                <td class="label">Academic Year:</td>
-                <td class="value">{{ $course->academicYear->name ?? 'N/A' }}</td>
-                <td class="label">Total Students:</td>
-                <td class="value">{{ count($students) }}</td>
+                <td class="label">School Year:</td>
+                <td class="value">{{ $course->academicYear->year_name ?? $course->academicYear->name ?? 'N/A' }}</td>
+                <td class="section-divider"></td>
+                <td class="label"></td>
+                <td class="value"></td>
             </tr>
         </table>
     </div>
@@ -255,28 +269,26 @@
         <thead>
             <tr>
                 <th>No.</th>
-                <th>Student Name</th>
-                <th>Midterm<br>Grade (%)</th>
-                <th>Finals<br>Grade (%)</th>
-                <th>Final<br>Grade (%)</th>
-                <th>Grade<br>Point</th>
-                <th>Remarks</th>
+                <th>NAME OF STUDENTS</th>
+                <th>COURSE</th>
+                <th>MIDTERM</th>
+                <th>FINAL TERM</th>
+                <th>REMARKS</th>
             </tr>
         </thead>
         <tbody>
             @forelse($students as $index => $student)
             <tr>
                 <td class="number">{{ $index + 1 }}</td>
-                <td class="name">{{ $student->last_name }}, {{ $student->first_name }}</td>
-                <td class="grade">{{ $student->midterm_grade }}</td>
-                <td class="grade">{{ $student->finals_grade }}</td>
-                <td class="final-grade">{{ $student->final_grade }}</td>
-                <td class="letter-grade">{{ $student->grade_point }}</td>
+                <td class="name">{{ strtoupper($student->last_name) }}, {{ strtoupper($student->first_name) }}</td>
+                <td class="course">{{ $programName }}</td>
+                <td class="grade">{{ $student->grade_point }}</td>
+                <td class="grade">{{ $student->grade_point }}</td>
                 <td class="remarks">{{ $student->remarks }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="7" style="text-align: center; padding: 20px; color: #666;">
+                <td colspan="6" style="text-align: center; padding: 20px; color: #666;">
                     No students enrolled in this course
                 </td>
             </tr>
@@ -286,58 +298,81 @@
 
     <!-- Grading System -->
     <div class="grading-system">
-        <h3>Grading System</h3>
+        <h3>GRADING SYSTEM:</h3>
         <table>
             <tr>
-                <td><b>1.0</b> - 97-100 (Excellent)</td>
-                <td><b>1.25</b> - 94-96 (Very Good)</td>
-                <td><b>1.5</b> - 91-93 (Very Good)</td>
-                <td><b>1.75</b> - 88-90 (Good)</td>
+                <td><b>Percent</b></td>
+                <td><b>Grade</b></td>
+                <td><b>Percent</b></td>
+                <td><b>Grade</b></td>
+                <td><b>Percent</b></td>
+                <td><b>Grade</b></td>
             </tr>
             <tr>
-                <td><b>2.0</b> - 85-87 (Good)</td>
-                <td><b>2.25</b> - 82-84 (Satisfactory)</td>
-                <td><b>2.5</b> - 79-81 (Satisfactory)</td>
-                <td><b>2.75</b> - 76-78 (Fair)</td>
+                <td>100</td>
+                <td>1.0</td>
+                <td>95</td>
+                <td>1.35</td>
+                <td>90</td>
+                <td>1.6</td>
             </tr>
             <tr>
-                <td><b>3.0</b> - 75 (Passing)</td>
-                <td><b>4.0</b> - 70-74 (Conditional)</td>
-                <td><b>5.0</b> - 65-69 (Failing)</td>
-                <td><b>F</b> - Below 65 (Failing)</td>
+                <td>99</td>
+                <td>1.15</td>
+                <td>94</td>
+                <td>1.4</td>
+                <td>89</td>
+                <td>1.65</td>
+            </tr>
+            <tr>
+                <td>98</td>
+                <td>1.2</td>
+                <td>93</td>
+                <td>1.45</td>
+                <td>88</td>
+                <td>1.7</td>
+            </tr>
+            <tr>
+                <td>97</td>
+                <td>1.25</td>
+                <td>92</td>
+                <td>1.5</td>
+                <td>87</td>
+                <td>1.75</td>
+            </tr>
+            <tr>
+                <td>96</td>
+                <td>1.3</td>
+                <td>91</td>
+                <td>1.55</td>
+                <td>86</td>
+                <td>1.8</td>
+            </tr>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>85</td>
+                <td>1.85</td>
             </tr>
         </table>
     </div>
 
     <!-- Signatures -->
     <div class="signatures">
-        <table>
-            <tr>
-                <td>
-                    <div class="signature-line">
-                        <div class="signature-name">{{ $course->teacher->first_name }} {{ $course->teacher->last_name }}</div>
-                        <div class="signature-title">Instructor</div>
-                    </div>
-                </td>
-                <td>
-                    <div class="signature-line">
-                        <div class="signature-name">&nbsp;</div>
-                        <div class="signature-title">Program Director</div>
-                    </div>
-                </td>
-                <td>
-                    <div class="signature-line">
-                        <div class="signature-name">&nbsp;</div>
-                        <div class="signature-title">Dean, Graduate School</div>
-                    </div>
-                </td>
-            </tr>
-        </table>
+        <div class="signature-box">
+            <div class="signature-line">
+                <div class="signature-name">{{ strtoupper($course->teacher->first_name) }} {{ strtoupper($course->teacher->last_name) }}</div>
+                <div class="signature-title">Professor</div>
+            </div>
+        </div>
     </div>
 
     <!-- Footer -->
     <div class="footer">
-        Date Generated: {{ date('F d, Y') }}
+        <div class="footer-address">San Miguel, Iriga City | 4431 | Philippines</div>
+        <div class="footer-address">205-1234 loc 137 | www.usant.edu.ph | info.gradschool@usant.edu.ph</div>
     </div>
 </body>
 </html>

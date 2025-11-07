@@ -35,9 +35,39 @@ const showPdfModal = ref(false);
 const selectedCourse = ref(null);
 const pdfUrl = ref('');
 
-const viewGradeSheet = async (course) => {
+// Semester selection modal
+const showSemesterModal = ref(false);
+const selectedSemester = ref('Second Semester');
+const semesterAction = ref(null); // 'view' or 'download'
+
+const semesters = [
+  '1st Semester',
+  '2nd Semester',
+  'Summer'
+];
+
+const openSemesterSelection = (course, action) => {
   selectedCourse.value = course;
-  
+  semesterAction.value = action;
+  showSemesterModal.value = true;
+};
+
+const confirmSemester = async () => {
+  if (!selectedCourse.value) return;
+
+  showSemesterModal.value = false;
+
+  if (semesterAction.value === 'view') {
+    await viewGradeSheetWithSemester();
+  } else if (semesterAction.value === 'download') {
+    downloadPdfWithSemester();
+  }
+};
+
+const viewGradeSheetWithSemester = async () => {
+  const course = selectedCourse.value;
+  const semester = selectedSemester.value;
+
   // Try to load from cache if offline
   if (!isOnline.value) {
     const cached = await getCachedFile(`grade-sheet-${course.id}.pdf`);
@@ -49,13 +79,17 @@ const viewGradeSheet = async (course) => {
     alert('⚠️ Grade sheet not available offline. Please connect to internet to view.');
     return;
   }
-  
-  pdfUrl.value = route('teacher.class-record.grade-sheet.pdf', course.id);
+
+  pdfUrl.value = route('teacher.class-record.grade-sheet.pdf', { course: course.id, semester });
   showPdfModal.value = true;
-  
+
   // Download for offline access
-  const url = route('teacher.class-record.grade-sheet.download', course.id);
+  const url = route('teacher.class-record.grade-sheet.download', { course: course.id, semester });
   await downloadFile(url, `grade-sheet-${course.id}.pdf`);
+};
+
+const viewGradeSheet = async (course) => {
+  openSemesterSelection(course, 'view');
 };
 
 const closePdfModal = () => {
@@ -64,9 +98,19 @@ const closePdfModal = () => {
   selectedCourse.value = null;
 };
 
+const downloadPdfWithSemester = () => {
+  if (selectedCourse.value) {
+    const semester = selectedSemester.value;
+    window.location.href = route('teacher.class-record.grade-sheet.download', {
+      course: selectedCourse.value.id,
+      semester
+    });
+  }
+};
+
 const downloadPdf = () => {
   if (selectedCourse.value) {
-    window.location.href = route('teacher.class-record.grade-sheet.download', selectedCourse.value.id);
+    openSemesterSelection(selectedCourse.value, 'download');
   }
 };
 
@@ -201,7 +245,86 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- PDF Modal -->
+      <!-- Semester Selection Modal -->
+      <Transition
+        enter-active-class="transition-all duration-300 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition-all duration-200 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div
+          v-if="showSemesterModal"
+          class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          @click="showSemesterModal = false"
+        >
+          <Transition
+            enter-active-class="transition-all duration-300 ease-out"
+            enter-from-class="opacity-0 scale-95"
+            enter-to-class="opacity-100 scale-100"
+            leave-active-class="transition-all duration-200 ease-in"
+            leave-from-class="opacity-100 scale-100"
+            leave-to-class="opacity-0 scale-95"
+          >
+            <div
+              v-if="showSemesterModal"
+              class="relative bg-white rounded-2xl shadow-2xl w-full max-w-md p-6"
+              @click.stop
+            >
+              <!-- Modal Header -->
+              <div class="flex items-center justify-between mb-6">
+                <h3 class="text-xl font-bold text-gray-900">Select Semester</h3>
+                <button
+                  @click="showSemesterModal = false"
+                  class="p-2 hover:bg-gray-100 rounded-lg transition-all"
+                  title="Close"
+                >
+                  <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+
+              <!-- Semester Options -->
+              <div class="space-y-3 mb-6">
+                <label
+                  v-for="semester in semesters"
+                  :key="semester"
+                  class="flex items-center p-4 border-2 rounded-lg cursor-pointer transition-all hover:bg-gray-50"
+                  :class="selectedSemester === semester ? 'border-red-900 bg-red-50' : 'border-gray-200'"
+                >
+                  <input
+                    type="radio"
+                    :value="semester"
+                    v-model="selectedSemester"
+                    class="w-5 h-5 text-red-900 focus:ring-red-500"
+                  />
+                  <span class="ml-3 text-gray-900 font-medium">{{ semester }}</span>
+                </label>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex gap-3">
+                <button
+                  @click="showSemesterModal = false"
+                  class="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  @click="confirmSemester"
+                  class="flex-1 px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition-all"
+                >
+                  Continue
+                </button>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </Transition>
+
+    <!-- PDF Modal -->
       <Transition
         enter-active-class="transition-all duration-300 ease-out"
         enter-from-class="opacity-0"
