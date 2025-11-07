@@ -19,9 +19,19 @@ import { ref, onMounted, onUnmounted } from 'vue';
 import { router } from '@inertiajs/vue3';
 
 const show = ref(false);
+const isOnline = ref(navigator.onLine);
 let timeout = null;
+let removeStartListener = null;
+let removeFinishListener = null;
+
+const updateOnlineStatus = () => {
+    isOnline.value = navigator.onLine;
+};
 
 const showIndicator = () => {
+    // Update online status when showing
+    updateOnlineStatus();
+    
     // Only show if loading takes more than 300ms
     timeout = setTimeout(() => {
         show.value = true;
@@ -45,6 +55,21 @@ onUnmounted(() => {
     router.off('start', showIndicator);
     router.off('finish', hideIndicator);
     if (timeout) clearTimeout(timeout);
+    removeStartListener = router.on('start', showIndicator);
+    removeFinishListener = router.on('finish', hideIndicator);
+    
+    // Listen for online/offline events
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+});
+
+onUnmounted(() => {
+    if (removeStartListener) removeStartListener();
+    if (removeFinishListener) removeFinishListener();
+    if (timeout) clearTimeout(timeout);
+    
+    window.removeEventListener('online', updateOnlineStatus);
+    window.removeEventListener('offline', updateOnlineStatus);
 });
 </script>
 
