@@ -374,9 +374,9 @@
 
     <!-- Footer -->
     <div class="footer">
-        <div class="footer-line">📍 San Miguel, Iriga City | 4431 | Philippines</div>
+        <div class="footer-line">&#9679; San Miguel, Iriga City | 4431 | Philippines</div>
         <div class="footer-line">
-            📞 205-1234 loc 137 | 🌐 www.usant.edu.ph | ✉ info.gradschool@usant.edu.ph
+            &#9742; 205-1234 loc 137 | &#9679; www.usant.edu.ph | &#9993; info.gradschool@usant.edu.ph
         </div>
     </div>
 </body>
