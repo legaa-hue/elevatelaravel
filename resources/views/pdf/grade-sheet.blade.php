@@ -6,7 +6,7 @@
     <style>
         @page {
             size: A4 portrait;
-            margin: 1cm 1.5cm;
+            margin: 1.5cm 2cm;
         }
 
         * {
@@ -16,28 +16,32 @@
         }
 
         body {
-            font-family: 'DejaVu Sans', Arial, sans-serif;
-            font-size: 9pt;
+            font-family: Arial, sans-serif;
+            font-size: 10pt;
             color: #000;
         }
 
         .header {
             margin-bottom: 15px;
             padding-bottom: 10px;
-            border-bottom: 2px solid #000;
             display: table;
             width: 100%;
         }
 
         .header-left {
             display: table-cell;
-            width: 80px;
+            vertical-align: middle;
+            width: 100px;
+        }
+
+        .logo-container {
+            display: inline-block;
             vertical-align: middle;
         }
 
         .logo-container img {
-            width: 70px;
-            height: 70px;
+            width: 65px;
+            height: 65px;
             object-fit: contain;
         }
 
@@ -45,51 +49,51 @@
             display: table-cell;
             vertical-align: middle;
             text-align: center;
-            padding: 0 10px;
+            padding: 0 15px;
         }
 
         .header-center h1 {
-            font-size: 16pt;
+            font-size: 14pt;
             font-weight: bold;
-            color: #d32f2f;
-            margin-bottom: 2px;
+            color: #c41e3a;
+            margin: 0;
             letter-spacing: 0.5px;
         }
 
         .header-right {
             display: table-cell;
-            width: 200px;
+            width: 180px;
             vertical-align: middle;
             text-align: right;
         }
 
         .header-right .subtitle {
-            font-size: 8pt;
+            font-size: 9pt;
             color: #000;
-            font-weight: 600;
-            line-height: 1.3;
+            font-weight: bold;
+            line-height: 1.5;
         }
 
         .title-section {
             text-align: center;
-            margin: 10px 0 15px 0;
+            margin: 8px 0 12px 0;
         }
 
         .title-section h2 {
-            font-size: 14pt;
+            font-size: 13pt;
             font-weight: bold;
             color: #000;
-            letter-spacing: 2px;
+            letter-spacing: 1.5px;
         }
 
         .course-info {
-            margin-bottom: 15px;
-            font-size: 8pt;
-            line-height: 1.6;
+            margin-bottom: 12px;
+            font-size: 9pt;
+            line-height: 1.8;
         }
 
         .course-info-line {
-            margin-bottom: 3px;
+            margin-bottom: 4px;
         }
 
         .course-info-line .label {
@@ -99,23 +103,23 @@
         .student-table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
         }
 
         .student-table th {
             background-color: #fff;
             color: #000;
             font-weight: bold;
-            padding: 6px 4px;
+            padding: 5px 4px;
             text-align: center;
             border: 1px solid #000;
-            font-size: 8pt;
+            font-size: 9pt;
         }
 
         .student-table td {
-            padding: 4px;
+            padding: 5px 4px;
             border: 1px solid #000;
-            font-size: 8pt;
+            font-size: 9pt;
         }
 
         .student-table tbody tr:nth-child(even) {
@@ -124,45 +128,44 @@
 
         .student-table td.number {
             text-align: center;
-            width: 30px;
+            width: 35px;
         }
 
         .student-table td.name {
             text-align: left;
             padding-left: 8px;
-            width: 180px;
+            width: 200px;
         }
 
         .student-table td.course {
             text-align: center;
-            font-size: 7pt;
-            width: 120px;
+            font-size: 8pt;
+            width: 140px;
         }
 
         .student-table td.grade {
             text-align: center;
-            width: 60px;
-            font-weight: 600;
+            width: 65px;
+            font-weight: normal;
         }
 
         .student-table td.remarks {
             text-align: center;
-            width: 70px;
-            font-weight: 600;
+            width: 75px;
+            font-weight: normal;
         }
 
         .grading-system {
             background-color: #fff;
-            padding: 10px;
-            border: 1px solid #000;
+            padding: 8px 10px;
             margin-bottom: 15px;
             page-break-inside: avoid;
         }
 
         .grading-system h3 {
-            font-size: 9pt;
+            font-size: 10pt;
             font-weight: bold;
-            margin-bottom: 8px;
+            margin-bottom: 6px;
             color: #000;
         }
 
@@ -172,8 +175,8 @@
         }
 
         .grading-table td {
-            padding: 2px 8px;
-            font-size: 8pt;
+            padding: 1px 10px;
+            font-size: 9pt;
             vertical-align: top;
         }
 
@@ -182,21 +185,23 @@
         }
 
         .grading-row {
-            margin-bottom: 2px;
+            margin-bottom: 1px;
+            line-height: 1.4;
         }
 
         .signatures {
-            margin-top: 30px;
+            margin-top: 25px;
             page-break-inside: avoid;
-            text-align: center;
+            text-align: right;
         }
 
         .signature-line {
-            border-top: 2px solid #000;
-            padding-top: 5px;
-            margin-top: 50px;
+            border-top: 1px solid #000;
+            padding-top: 4px;
+            margin-top: 40px;
             display: inline-block;
-            min-width: 250px;
+            min-width: 200px;
+            text-align: center;
         }
 
         .signature-name {
@@ -211,16 +216,24 @@
         }
 
         .footer {
+            position: fixed;
+            bottom: 15px;
+            left: 0;
+            right: 0;
             text-align: center;
-            margin-top: 20px;
-            padding-top: 10px;
-            border-top: 1px solid #ccc;
-            font-size: 7pt;
-            color: #666;
+            font-size: 8pt;
+            color: #333;
         }
 
-        .footer-address {
+        .footer-line {
             margin-bottom: 2px;
+            line-height: 1.6;
+        }
+
+        .footer-icon {
+            display: inline-block;
+            margin-right: 3px;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -255,7 +268,7 @@
     <div class="course-info">
         <div class="course-info-line">
             <span class="label">Course Code:</span> {{ $course->section }}
-            &nbsp;&nbsp;&nbsp;&nbsp;
+            &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
             <span class="label">Course Name:</span> {{ $course->title }}
         </div>
         <div class="course-info-line">
@@ -263,7 +276,7 @@
             &nbsp;&nbsp;
             <span class="label">Semester:</span> {{ $semester }}
             &nbsp;&nbsp;
-            <span class="label">Summer:</span> _____
+            <span class="label">Summer:</span> ____
             &nbsp;&nbsp;
             <span class="label">School Year:</span> {{ $course->academicYear->year_name ?? $course->academicYear->name ?? 'N/A' }}
         </div>
@@ -351,8 +364,10 @@
 
     <!-- Footer -->
     <div class="footer">
-        <div class="footer-address">San Miguel, Iriga City | 4431 | Philippines</div>
-        <div class="footer-address">205-1234 loc 137 | www.usant.edu.ph | info.gradschool@usant.edu.ph</div>
+        <div class="footer-line">📍 San Miguel, Iriga City | 4431 | Philippines</div>
+        <div class="footer-line">
+            📞 205-1234 loc 137 | 🌐 www.usant.edu.ph | ✉ info.gradschool@usant.edu.ph
+        </div>
     </div>
 </body>
 </html>
