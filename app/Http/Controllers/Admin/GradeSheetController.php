@@ -12,6 +12,10 @@ class GradeSheetController extends Controller
 {
     public function show(Course $course)
     {
+        // Load program relationship first
+        $course->load('program');
+        $passingGrade = $this->getPassingGrade($course);
+
         // Get enrolled students with their grades
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -24,7 +28,7 @@ class GradeSheetController extends Controller
         $gradebook = $course->gradebook ?? null;
 
         // Calculate final grades for each student
-        $studentsWithGrades = $students->map(function ($student) use ($gradebook) {
+        $studentsWithGrades = $students->map(function ($student) use ($gradebook, $passingGrade) {
             $midtermGrade = 0;
             $finalsGrade = 0;
             
@@ -55,16 +59,17 @@ class GradeSheetController extends Controller
                 $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) + 
                               ($finalsGrade * ($finalsPercentage / 100));
                 
+                $gradePoint = $this->percentToGradePoint($finalGrade);
                 $student->midterm_grade = round($midtermGrade, 2);
                 $student->finals_grade = round($finalsGrade, 2);
                 $student->final_grade = round($finalGrade, 2);
-                $student->letter_grade = $this->getLetterGrade($finalGrade);
-                $student->remarks = $this->getRemarks($finalGrade);
+                $student->grade_point = number_format($gradePoint, 2);
+                $student->remarks = $this->getRemarks($gradePoint, $passingGrade);
             } else {
                 $student->midterm_grade = 0;
                 $student->finals_grade = 0;
                 $student->final_grade = 0;
-                $student->letter_grade = 'INC';
+                $student->grade_point = '5.00';
                 $student->remarks = 'Incomplete';
             }
             
@@ -86,6 +91,10 @@ class GradeSheetController extends Controller
         // Get semester from request (default to "Second Semester" if not provided)
         $semester = $request->input('semester', 'Second Semester');
 
+        // Load program relationship first
+        $course->load('program');
+        $passingGrade = $this->getPassingGrade($course);
+
         // Get enrolled students with their grades
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -98,7 +107,7 @@ class GradeSheetController extends Controller
         $gradebook = $course->gradebook ?? null;
 
         // Calculate final grades for each student
-        $studentsWithGrades = $students->map(function ($student) use ($gradebook) {
+        $studentsWithGrades = $students->map(function ($student) use ($gradebook, $passingGrade) {
             $midtermGrade = 0;
             $finalsGrade = 0;
             
@@ -129,16 +138,17 @@ class GradeSheetController extends Controller
                 $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) + 
                               ($finalsGrade * ($finalsPercentage / 100));
                 
+                $gradePoint = $this->percentToGradePoint($finalGrade);
                 $student->midterm_grade = round($midtermGrade, 2);
                 $student->finals_grade = round($finalsGrade, 2);
                 $student->final_grade = round($finalGrade, 2);
-                $student->letter_grade = $this->getLetterGrade($finalGrade);
-                $student->remarks = $this->getRemarks($finalGrade);
+                $student->grade_point = number_format($gradePoint, 2);
+                $student->remarks = $this->getRemarks($gradePoint, $passingGrade);
             } else {
                 $student->midterm_grade = 0;
                 $student->finals_grade = 0;
                 $student->final_grade = 0;
-                $student->letter_grade = 'INC';
+                $student->grade_point = '5.00';
                 $student->remarks = 'Incomplete';
             }
             
@@ -173,6 +183,10 @@ class GradeSheetController extends Controller
         // Get semester from request (default to "Second Semester" if not provided)
         $semester = $request->input('semester', 'Second Semester');
 
+        // Load program relationship first
+        $course->load('program');
+        $passingGrade = $this->getPassingGrade($course);
+
         // Get enrolled students with their grades (same logic as downloadPdf)
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -183,7 +197,7 @@ class GradeSheetController extends Controller
 
         $gradebook = $course->gradebook ?? null;
 
-        $studentsWithGrades = $students->map(function ($student) use ($gradebook) {
+        $studentsWithGrades = $students->map(function ($student) use ($gradebook, $passingGrade) {
             $midtermGrade = 0;
             $finalsGrade = 0;
             
@@ -210,16 +224,17 @@ class GradeSheetController extends Controller
                 $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) + 
                               ($finalsGrade * ($finalsPercentage / 100));
                 
+                $gradePoint = $this->percentToGradePoint($finalGrade);
                 $student->midterm_grade = round($midtermGrade, 2);
                 $student->finals_grade = round($finalsGrade, 2);
                 $student->final_grade = round($finalGrade, 2);
-                $student->letter_grade = $this->getLetterGrade($finalGrade);
-                $student->remarks = $this->getRemarks($finalGrade);
+                $student->grade_point = number_format($gradePoint, 2);
+                $student->remarks = $this->getRemarks($gradePoint, $passingGrade);
             } else {
                 $student->midterm_grade = 0;
                 $student->finals_grade = 0;
                 $student->final_grade = 0;
-                $student->letter_grade = 'INC';
+                $student->grade_point = '5.00';
                 $student->remarks = 'Incomplete';
             }
             
@@ -359,27 +374,53 @@ class GradeSheetController extends Controller
         return $total;
     }
 
-    private function getLetterGrade($grade)
+    private function percentToGradePoint($percentage)
     {
-        if ($grade >= 97) return '1.0';
-        if ($grade >= 94) return '1.25';
-        if ($grade >= 91) return '1.5';
-        if ($grade >= 88) return '1.75';
-        if ($grade >= 85) return '2.0';
-        if ($grade >= 82) return '2.25';
-        if ($grade >= 79) return '2.5';
-        if ($grade >= 76) return '2.75';
-        if ($grade >= 75) return '3.0';
-        if ($grade >= 70) return '4.0';
-        if ($grade >= 65) return '5.0';
-        return 'F';
+        // Convert percentage (0-100) to grade point (1.0-5.0)
+        // 97-100% = 1.00, 0% = 5.00
+
+        if ($percentage >= 97) return 1.00;
+        if ($percentage >= 94) return 1.25;
+        if ($percentage >= 91) return 1.50;
+        if ($percentage >= 88) return 1.75;
+        if ($percentage >= 85) return 2.00;
+        if ($percentage >= 82) return 2.25;
+        if ($percentage >= 79) return 2.50;
+        if ($percentage >= 76) return 2.75;
+        if ($percentage >= 75) return 3.00;
+        if ($percentage >= 72) return 3.25;
+        if ($percentage >= 69) return 3.50;
+        if ($percentage >= 66) return 3.75;
+        if ($percentage >= 63) return 4.00;
+        if ($percentage >= 60) return 4.25;
+        if ($percentage >= 57) return 4.50;
+        if ($percentage >= 54) return 4.75;
+
+        return 5.00; // Below 54% is failing
     }
 
-    private function getRemarks($grade)
+    private function getRemarks($gradePoint, $passingGrade = 1.75)
     {
-        if ($grade >= 75) return 'Passed';
-        if ($grade >= 65) return 'Conditional';
-        if ($grade > 0) return 'Failed';
-        return 'Incomplete';
+        // Use dynamic passing grade (1.75 for Masteral, 1.45 for Doctorate)
+        return $gradePoint <= $passingGrade ? 'Passed' : 'Failed';
+    }
+
+    /**
+     * Determine passing grade based on program type
+     */
+    private function getPassingGrade(Course $course)
+    {
+        $programName = strtolower($course->program->name ?? '');
+        // Doctorate programs require 1.45 or better
+        // Check for common doctorate indicators
+        if (str_contains($programName, 'doctor') ||
+            str_contains($programName, 'phd') ||
+            str_contains($programName, 'ph.d') ||
+            str_contains($programName, 'dba') ||
+            str_contains($programName, 'edd')) {
+            return 1.45;
+        }
+        // Default to Masteral passing grade of 1.75
+        return 1.75;
     }
 }

@@ -280,11 +280,11 @@
             @forelse($students as $index => $student)
             <tr>
                 <td class="number">{{ $index + 1 }}</td>
-                <td class="name">{{ strtoupper($student->last_name) }}, {{ strtoupper($student->first_name) }}</td>
-                <td class="course">{{ $programName }}</td>
-                <td class="grade">{{ $student->grade_point }}</td>
-                <td class="grade">{{ $student->grade_point }}</td>
-                <td class="remarks">{{ $student->remarks }}</td>
+                <td class="name">{{ strtoupper($student->last_name ?? '') }}, {{ strtoupper($student->first_name ?? '') }}</td>
+                <td class="course">{{ $programName ?? 'N/A' }}</td>
+                <td class="grade">{{ $student->grade_point ?? '0.00' }}</td>
+                <td class="grade">{{ $student->grade_point ?? '0.00' }}</td>
+                <td class="remarks">{{ $student->remarks ?? 'Incomplete' }}</td>
             </tr>
             @empty
             <tr>
@@ -309,52 +309,52 @@
                 <td><b>Grade</b></td>
             </tr>
             <tr>
-                <td>100</td>
-                <td>1.0</td>
-                <td>95</td>
-                <td>1.35</td>
-                <td>90</td>
-                <td>1.6</td>
+                <td>97-100</td>
+                <td>1.00</td>
+                <td>79-81</td>
+                <td>2.50</td>
+                <td>63-65</td>
+                <td>4.00</td>
             </tr>
             <tr>
-                <td>99</td>
-                <td>1.15</td>
-                <td>94</td>
-                <td>1.4</td>
-                <td>89</td>
-                <td>1.65</td>
-            </tr>
-            <tr>
-                <td>98</td>
-                <td>1.2</td>
-                <td>93</td>
-                <td>1.45</td>
-                <td>88</td>
-                <td>1.7</td>
-            </tr>
-            <tr>
-                <td>97</td>
+                <td>94-96</td>
                 <td>1.25</td>
-                <td>92</td>
-                <td>1.5</td>
-                <td>87</td>
+                <td>76-78</td>
+                <td>2.75</td>
+                <td>60-62</td>
+                <td>4.25</td>
+            </tr>
+            <tr>
+                <td>91-93</td>
+                <td>1.50</td>
+                <td>75</td>
+                <td>3.00</td>
+                <td>57-59</td>
+                <td>4.50</td>
+            </tr>
+            <tr>
+                <td>88-90</td>
                 <td>1.75</td>
+                <td>72-74</td>
+                <td>3.25</td>
+                <td>54-56</td>
+                <td>4.75</td>
             </tr>
             <tr>
-                <td>96</td>
-                <td>1.3</td>
-                <td>91</td>
-                <td>1.55</td>
-                <td>86</td>
-                <td>1.8</td>
+                <td>85-87</td>
+                <td>2.00</td>
+                <td>69-71</td>
+                <td>3.50</td>
+                <td>Below 54</td>
+                <td>5.00</td>
             </tr>
             <tr>
+                <td>82-84</td>
+                <td>2.25</td>
+                <td>66-68</td>
+                <td>3.75</td>
                 <td></td>
                 <td></td>
-                <td></td>
-                <td></td>
-                <td>85</td>
-                <td>1.85</td>
             </tr>
         </table>
     </div>
@@ -363,7 +363,13 @@
     <div class="signatures">
         <div class="signature-box">
             <div class="signature-line">
-                <div class="signature-name">{{ strtoupper($course->teacher->first_name) }} {{ strtoupper($course->teacher->last_name) }}</div>
+                <div class="signature-name">
+                    @if($course->teacher)
+                        {{ strtoupper($course->teacher->first_name ?? '') }} {{ strtoupper($course->teacher->last_name ?? '') }}
+                    @else
+                        &nbsp;
+                    @endif
+                </div>
                 <div class="signature-title">Professor</div>
             </div>
         </div>
