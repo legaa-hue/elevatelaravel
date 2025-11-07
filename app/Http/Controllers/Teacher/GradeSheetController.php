@@ -88,7 +88,7 @@ class GradeSheetController extends Controller
             'semester' => $semester,
             'programName' => $programName,
         ]);
-        $pdf->setPaper('a4', 'landscape');
+        $pdf->setPaper('a4', 'portrait');
         return $pdf->stream('GradeSheet_' . str_replace(' ', '_', $course->title) . '.pdf');
     }
 
@@ -171,7 +171,7 @@ class GradeSheetController extends Controller
             'semester' => $semester,
             'programName' => $programName,
         ]);
-        $pdf->setPaper('a4', 'landscape');
+        $pdf->setPaper('a4', 'portrait');
         $filename = 'GradeSheet_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
         return $pdf->download($filename);
     }

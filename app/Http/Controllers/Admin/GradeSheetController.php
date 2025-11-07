@@ -169,8 +169,8 @@ class GradeSheetController extends Controller
             'programName' => $programName,
         ]);
 
-        // Set paper size to landscape A4
-        $pdf->setPaper('a4', 'landscape');
+        // Set paper size to portrait A4
+        $pdf->setPaper('a4', 'portrait');
 
         // Download the PDF
         $filename = 'GradeSheet_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
@@ -254,7 +254,7 @@ class GradeSheetController extends Controller
             'programName' => $programName,
         ]);
 
-        $pdf->setPaper('a4', 'landscape');
+        $pdf->setPaper('a4', 'portrait');
 
         // Stream the PDF (view in browser)
         return $pdf->stream('GradeSheet_' . str_replace(' ', '_', $course->title) . '.pdf');

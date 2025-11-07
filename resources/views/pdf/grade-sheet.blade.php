@@ -19,11 +19,13 @@
             font-family: Arial, sans-serif;
             font-size: 10pt;
             color: #000;
+            padding: 20px;
         }
 
         .header {
             margin-bottom: 15px;
             padding-bottom: 10px;
+            border-bottom: 2px solid #000;
             display: table;
             width: 100%;
         }
@@ -31,12 +33,18 @@
         .header-left {
             display: table-cell;
             vertical-align: middle;
-            width: 100px;
+            width: 60%;
+        }
+
+        .logo-and-name {
+            display: table;
+            width: 100%;
         }
 
         .logo-container {
-            display: inline-block;
+            display: table-cell;
             vertical-align: middle;
+            width: 80px;
         }
 
         .logo-container img {
@@ -45,24 +53,24 @@
             object-fit: contain;
         }
 
-        .header-center {
+        .university-name {
             display: table-cell;
             vertical-align: middle;
-            text-align: center;
-            padding: 0 15px;
+            padding-left: 10px;
         }
 
-        .header-center h1 {
-            font-size: 14pt;
+        .university-name h1 {
+            font-size: 13pt;
             font-weight: bold;
             color: #c41e3a;
             margin: 0;
             letter-spacing: 0.5px;
+            line-height: 1.3;
         }
 
         .header-right {
             display: table-cell;
-            width: 180px;
+            width: 40%;
             vertical-align: middle;
             text-align: right;
         }
@@ -241,14 +249,16 @@
     <!-- Header -->
     <div class="header">
         <div class="header-left">
-            @if(file_exists(public_path('images/usant-logo.png')))
-            <div class="logo-container">
-                <img src="{{ public_path('images/usant-logo.png') }}" alt="University Logo">
+            <div class="logo-and-name">
+                @if(file_exists(public_path('images/usant-logo.png')))
+                <div class="logo-container">
+                    <img src="{{ public_path('images/usant-logo.png') }}" alt="University Logo">
+                </div>
+                @endif
+                <div class="university-name">
+                    <h1>UNIVERSITY OF<br>SAINT ANTHONY</h1>
+                </div>
             </div>
-            @endif
-        </div>
-        <div class="header-center">
-            <h1>UNIVERSITY OF SAINT ANTHONY</h1>
         </div>
         <div class="header-right">
             <div class="subtitle">
