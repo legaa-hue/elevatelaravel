@@ -95,6 +95,17 @@ self.addEventListener('sync', event => {
             // Sync any pending subscription updates
             syncPushSubscriptions()
         );
+    } else if (event.tag === 'sync-offline-data') {
+        // Trigger offline data sync in the main app
+        event.waitUntil(
+            self.clients.matchAll().then(clients => {
+                clients.forEach(client => {
+                    client.postMessage({
+                        type: 'SYNC_OFFLINE_DATA'
+                    });
+                });
+            })
+        );
     }
 });
 

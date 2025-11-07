@@ -6,9 +6,7 @@
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                     <div>
                         <p class="font-semibold text-gray-900">Loading...</p>
-                        <p class="text-sm text-gray-600">
-                            {{ isOnline ? 'Please wait' : 'Loading from offline cache' }}
-                        </p>
+                        <p class="text-sm text-gray-600">Loading offline content</p>
                     </div>
                 </div>
             </div>
@@ -49,6 +47,14 @@ const hideIndicator = () => {
 };
 
 onMounted(() => {
+    router.on('start', showIndicator);
+    router.on('finish', hideIndicator);
+});
+
+onUnmounted(() => {
+    router.off('start', showIndicator);
+    router.off('finish', hideIndicator);
+    if (timeout) clearTimeout(timeout);
     removeStartListener = router.on('start', showIndicator);
     removeFinishListener = router.on('finish', hideIndicator);
     

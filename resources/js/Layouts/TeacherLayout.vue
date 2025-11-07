@@ -3,6 +3,11 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import { router } from '@inertiajs/vue3';
 import axios from 'axios';
+import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
+import OfflineLoadingIndicator from '@/Components/OfflineLoadingIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import offlineStorage from '@/offline-storage';
 
 const page = usePage();
 const sidebarOpen = ref(false); // default collapsed; will be set on mount based on viewport
@@ -12,6 +17,8 @@ const joinedCoursesDropdownOpen = ref(false);
 const notificationDropdownOpen = ref(false);
 const showCreateCourseModal = ref(false);
 const showJoinCourseModal = ref(false);
+const showToast = ref(false);
+const toastMessage = ref('');
 const myCourses = ref([]);
 const joinedCourses = ref([]);
 const loadingCourses = ref(false);
@@ -26,6 +33,39 @@ const loadingNotifications = ref(false);
 
 const user = computed(() => page.props.auth.user);
 const activeAcademicYear = computed(() => page.props.activeAcademicYear);
+
+// Offline sync
+const { syncPendingActions, saveOfflineAction, updatePendingCount } = useOfflineSync();
+
+const handleRetrySync = () => {
+    syncPendingActions();
+};
+
+// PWA Install Button (YouTube-style)
+const showInstallButton = ref(false);
+const deferredPrompt = ref(null);
+
+const handleInstallClick = async () => {
+    if (!deferredPrompt.value) {
+        console.log('⚠️ PWA: Install prompt not available yet');
+        console.log('💡 TIP: Use Chrome address bar install icon (⊕) or Chrome menu → Install ElevateGS');
+        alert('Install ElevateGS App:\n\n1. Look for ⊕ icon in Chrome address bar (top-right)\n2. Or: Chrome menu (⋮) → Install ElevateGS\n3. Or: DevTools → Application → Manifest → Install\n\nThe app will work offline once installed!');
+        return;
+    }
+    
+    console.log('🚀 PWA: Showing install prompt');
+    deferredPrompt.value.prompt();
+    const { outcome } = await deferredPrompt.value.userChoice;
+    
+    if (outcome === 'accepted') {
+        console.log('✅ PWA: User accepted the install prompt');
+    } else {
+        console.log('❌ PWA: User dismissed the install prompt');
+    }
+    
+    deferredPrompt.value = null;
+    showInstallButton.value = false;
+};
 
 // Navigation items
         const navigation = [
@@ -42,10 +82,30 @@ const isActive = (routeName) => {
 const loadPrograms = async () => {
     loadingPrograms.value = true;
     try {
-        const response = await axios.get('/teacher/programs/list');
-        programs.value = response.data;
+        if (navigator.onLine) {
+            const response = await axios.get('/teacher/programs/list', { headers: { 'Accept': 'application/json' } });
+            programs.value = response.data || [];
+            // Cache for offline use
+            try { await offlineStorage.saveMany('programs', programs.value); } catch {}
+        } else {
+            const cached = await offlineStorage.getAll('programs');
+            programs.value = cached || [];
+            if (!cached || cached.length === 0) {
+                console.warn('No cached programs found for offline');
+            } else {
+                console.log(`📦 Loaded ${cached.length} cached programs`);
+            }
+        }
     } catch (error) {
         console.error('Failed to load programs:', error);
+        // Fallback to cache on error
+        try {
+            const cached = await offlineStorage.getAll('programs');
+            if (cached && cached.length) {
+                programs.value = cached;
+                console.log('📦 Using cached programs (fallback)');
+            }
+        } catch {}
     } finally {
         loadingPrograms.value = false;
     }
@@ -60,13 +120,31 @@ const loadCourseTemplates = async (programId, courseType) => {
     
     loadingTemplates.value = true;
     try {
-        const response = await axios.get(`/teacher/programs/${programId}/course-templates`, {
-            params: { course_type: courseType }
-        });
-        courseTemplates.value = response.data;
+        if (navigator.onLine) {
+            const response = await axios.get(`/teacher/programs/${programId}/course-templates`, {
+                params: { course_type: courseType }
+            });
+            courseTemplates.value = response.data || [];
+            // Cache templates for offline use
+            try { await offlineStorage.saveMany('courseTemplates', courseTemplates.value); } catch {}
+        } else {
+            const cached = await offlineStorage.getByIndex('courseTemplates', 'program_id', programId);
+            courseTemplates.value = (cached || []).filter(ct => (ct.course_type === courseType));
+            if (!courseTemplates.value.length) {
+                console.warn('No cached course templates for selected program/type');
+            } else {
+                console.log(`📦 Loaded ${courseTemplates.value.length} cached templates`);
+            }
+        }
     } catch (error) {
         console.error('Failed to load course templates:', error);
-        courseTemplates.value = [];
+        // Fallback to cache on error
+        try {
+            const cached = await offlineStorage.getByIndex('courseTemplates', 'program_id', programId);
+            courseTemplates.value = (cached || []).filter(ct => (ct.course_type === courseType));
+        } catch {
+            courseTemplates.value = [];
+        }
     } finally {
         loadingTemplates.value = false;
     }
@@ -155,17 +233,51 @@ const openCreateCourseModal = () => {
 };
 
 // Submit Create Course
-const submitCreateCourse = () => {
+const submitCreateCourse = async () => {
     createCourseForm.value.processing = true;
     createCourseForm.value.errors = {};
 
-    router.post('/teacher/courses', {
+    const payload = {
         program_id: createCourseForm.value.program_id,
         course_template_id: createCourseForm.value.course_template_id,
         section: createCourseForm.value.section,
         description: createCourseForm.value.description,
         academic_year_id: createCourseForm.value.academic_year_id,
-    }, {
+    };
+
+    if (!navigator.onLine) {
+        // Queue offline action
+        try {
+            await saveOfflineAction('create_course', payload);
+            showToast.value = true;
+            toastMessage.value = 'Saved offline. Will create the course when you are back online.';
+            setTimeout(() => hideToast(), 4000);
+            showCreateCourseModal.value = false;
+            createCourseForm.value.processing = false;
+            // Reset form
+            createCourseForm.value = {
+                program_id: null,
+                courseType: '',
+                course_template_id: null,
+                selectedCourse: null,
+                title: '',
+                section: '',
+                description: '',
+                units: 3,
+                academic_year_id: activeAcademicYear.value?.id || null,
+                processing: false,
+                errors: {}
+            };
+            // Update pending indicator
+            try { await updatePendingCount(); } catch {}
+            return;
+        } catch (e) {
+            console.error('Failed to save offline course create:', e);
+            // Fall through to try router.post (will likely fail but surfaces errors)
+        }
+    }
+
+    router.post('/teacher/courses', payload, {
         preserveScroll: true,
         onSuccess: () => {
             showCreateCourseModal.value = false;
@@ -380,6 +492,12 @@ const timeAgo = (date) => {
     return Math.floor(seconds) + ' seconds ago';
 };
 
+// Toast notification functions
+const hideToast = () => {
+    showToast.value = false;
+    toastMessage.value = '';
+};
+
 // Poll for new notifications every 30 seconds
 let notificationInterval;
 
@@ -400,6 +518,30 @@ onMounted(() => {
     notificationInterval = setInterval(() => {
         loadUnreadCount();
     }, 30000);
+    
+    // PWA Install Button (YouTube-style)
+    console.log('🎯 PWA: Setting up install button listeners');
+    
+    // Check if already in standalone mode (already installed)
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+        console.log('✅ PWA: App already installed (standalone mode)');
+        showInstallButton.value = false;
+    }
+    
+    window.addEventListener('beforeinstallprompt', (e) => {
+        console.log('🚀 PWA: beforeinstallprompt event fired!');
+        e.preventDefault();
+        deferredPrompt.value = e;
+        showInstallButton.value = true;
+        console.log('✅ PWA: Install button should now be visible');
+    });
+    
+    // Hide install button if app is already installed
+    window.addEventListener('appinstalled', () => {
+        console.log('🎉 PWA: App installed successfully!');
+        showInstallButton.value = false;
+        deferredPrompt.value = null;
+    });
 });
 
 onUnmounted(() => {
@@ -410,7 +552,13 @@ onUnmounted(() => {
 </script>
 
 <template>
-    <div class="min-h-screen bg-gray-50">
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
+    
+    <div class="min-h-screen bg-gray-50 overflow-x-hidden">
+        <!-- Offline Sync Indicator -->
+        <OfflineSyncIndicator @retry-sync="handleRetrySync" />
+        
         <!-- Toast Notification -->
         <transition name="fade">
             <div v-if="showToast" class="fixed top-6 right-6 z-[9999] bg-green-600 text-white px-6 py-3 rounded shadow-lg flex items-center gap-3 animate-fade-in">
@@ -670,6 +818,21 @@ onUnmounted(() => {
                             </svg>
                         </button>
 
+                        <!-- Install App Button (YouTube-style) -->
+                        <!-- Always visible for easy access to installation options -->
+                        <!-- Disabled for debugging
+                        <button
+                            @click="handleInstallClick"
+                            class="flex items-center gap-2 px-3 py-2 bg-white border-2 border-red-900 text-red-900 hover:bg-red-50 rounded-lg font-medium transition shadow-sm"
+                            title="Install ElevateGS App"
+                        >
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            <span class="hidden md:inline font-semibold">Install</span>
+                        </button>
+                        -->
+
                         <!-- Notification Icon -->
                         <div class="relative">
                             <button
@@ -819,7 +982,7 @@ onUnmounted(() => {
             </header>
 
             <!-- Page Content -->
-            <main class="pt-20 p-6 bg-gray-50 min-h-screen">
+            <main class="pt-20 p-6 bg-gray-50 min-h-screen overflow-x-hidden">
                 <slot />
             </main>
         </div>
@@ -1020,6 +1183,10 @@ onUnmounted(() => {
             </div>
         </div>
     </div>
+
+    <!-- Offline Indicators -->
+    <OfflineSyncIndicator @retry-sync="handleRetrySync" />
+    <OfflineLoadingIndicator />
 </template>
 
 <style scoped>

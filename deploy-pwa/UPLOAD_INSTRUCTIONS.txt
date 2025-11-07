@@ -1,0 +1,36 @@
+﻿UPLOAD INSTRUCTIONS FOR HOSTINGER
+==================================
+
+Upload the following files from the 'deploy-pwa' folder to your Hostinger server:
+
+SERVER PATH: domains/elevategradschool.com/public_html/
+
+FILES TO UPLOAD:
+----------------
+âœ“ public/manifest.json                â†’ /public/manifest.json
+âœ“ public/sw.js                        â†’ /public/sw.js  
+âœ“ public/workbox-40c80ae4.js          â†’ /public/workbox-40c80ae4.js
+âœ“ public/manifest.webmanifest         â†’ /public/manifest.webmanifest
+âœ“ resources/views/app.blade.php       â†’ /resources/views/app.blade.php
+âœ“ public/build/ (ENTIRE FOLDER)       â†’ /public/build/
+
+IMPORTANT:
+----------
+- Maintain the same folder structure
+- Overwrite existing files when prompted
+- Make sure file permissions are correct (644 for files, 755 for folders)
+
+AFTER UPLOAD:
+-------------
+1. Clear your browser cache (Ctrl + Shift + Delete)
+2. Hard refresh the site (Ctrl + Shift + R)
+3. Check DevTools â†’ Application â†’ Manifest
+4. Look for install button in URL bar
+
+VERIFICATION:
+-------------
+Visit: https://elevategradschool.com/manifest.json
+Should show: {"name":"ElevateGS - Grading & Learning Platform"...}
+
+Visit: https://elevategradschool.com/sw.js
+Should show: JavaScript code (service worker)

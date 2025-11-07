@@ -2,13 +2,23 @@
 import { ref, onMounted, computed } from 'vue';
 import { Link, usePage } from '@inertiajs/vue3';
 import ApplicationLogo from '@/Components/ApplicationLogo.vue';
+import OfflineSyncIndicator from '@/Components/OfflineSyncIndicator.vue';
+import OfflineLoadingIndicator from '@/Components/OfflineLoadingIndicator.vue';
+import InstallPWAPrompt from '@/Components/InstallPWAPrompt.vue';
+import axios from 'axios';
 
 const sidebarOpen = ref(true);
 const showProfileDropdown = ref(false);
+const notificationDropdownOpen = ref(false);
 const page = usePage();
 
 // Get pending courses count from shared props
 const pendingCoursesCount = computed(() => page.props.pendingCoursesCount || 0);
+
+// Notifications
+const notifications = ref([]);
+const unreadCount = ref(0);
+const loadingNotifications = ref(false);
 
 // Load sidebar state from localStorage or default to open
 onMounted(() => {
@@ -19,6 +29,9 @@ onMounted(() => {
         // Default to open on desktop, closed on mobile
         sidebarOpen.value = window.innerWidth >= 768;
     }
+    
+    // Load unread count on mount
+    loadUnreadCount();
 });
 
 const toggleSidebar = () => {
@@ -28,6 +41,72 @@ const toggleSidebar = () => {
 
 const toggleProfileDropdown = () => {
     showProfileDropdown.value = !showProfileDropdown.value;
+};
+
+// Load notifications
+const loadNotifications = async () => {
+    loadingNotifications.value = true;
+    try {
+        const response = await axios.get('/admin/notifications');
+        notifications.value = response.data.notifications;
+        unreadCount.value = response.data.unread_count;
+    } catch (error) {
+        console.error('Failed to load notifications', error);
+    } finally {
+        loadingNotifications.value = false;
+    }
+};
+
+// Load unread count
+const loadUnreadCount = async () => {
+    try {
+        const response = await axios.get('/admin/notifications/unread-count');
+        unreadCount.value = response.data.count;
+    } catch (error) {
+        console.error('Failed to load unread count', error);
+    }
+};
+
+// Toggle notifications dropdown
+const toggleNotifications = () => {
+    notificationDropdownOpen.value = !notificationDropdownOpen.value;
+    if (notificationDropdownOpen.value) {
+        loadNotifications();
+    }
+};
+
+// Mark notification as read
+const markAsRead = async (notificationId) => {
+    try {
+        await axios.post(`/admin/notifications/${notificationId}/read`);
+        const notification = notifications.value.find(n => n.id === notificationId);
+        if (notification) {
+            notification.is_read = true;
+        }
+        loadUnreadCount();
+    } catch (error) {
+        console.error('Failed to mark notification as read', error);
+    }
+};
+
+// Handle notification click
+const handleNotificationClick = (notification) => {
+    markAsRead(notification.id);
+    if (notification.data.url) {
+        window.location.href = notification.data.url;
+    }
+};
+
+// Get notification time ago
+const timeAgo = (timestamp) => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    const seconds = Math.floor((now - then) / 1000);
+    
+    if (seconds < 60) return 'Just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
 };
 
 const logout = () => {
@@ -90,21 +169,21 @@ const menuItems = [
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
         </svg>`
     },
-    { 
-        name: 'Reports', 
-        route: 'admin.reports',
-        icon: `<svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-        </svg>`
-    },
 ];
 
 const isCurrentRoute = (routeName) => {
-    return route().current(routeName);
+    try {
+        return route().current(routeName);
+    } catch (error) {
+        return false;
+    }
 };
 </script>
 
 <template>
+    <!-- Install PWA Prompt -->
+    <InstallPWAPrompt />
+    
     <div class="min-h-screen bg-gray-50">
         <!-- Mobile overlay when sidebar open -->
         <div v-if="sidebarOpen" @click="toggleSidebar" class="fixed inset-0 z-30 bg-black bg-opacity-40 lg:hidden"></div>
@@ -216,21 +295,69 @@ const isCurrentRoute = (routeName) => {
                 
                 <div class="flex items-center space-x-4">
                     <!-- Notifications -->
-                    <Link
-                        :href="route('admin.courses.index')"
-                        class="p-2 rounded-lg hover:bg-gray-100 relative transition-colors"
-                        aria-label="Course Approval Notifications"
-                    >
-                        <svg class="w-6 h-6 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
-                        </svg>
-                        <span
-                            v-if="pendingCoursesCount > 0"
-                            class="absolute top-0 right-0 flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold text-white bg-red-900 rounded-full border-2 border-white"
+                    <div class="relative">
+                        <button
+                            @click="toggleNotifications"
+                            class="p-2 rounded-lg hover:bg-gray-100 relative transition-colors"
+                            aria-label="Notifications"
                         >
-                            {{ pendingCoursesCount }}
-                        </span>
-                    </Link>
+                            <svg class="w-6 h-6 text-gray-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                            </svg>
+                            <span
+                                v-if="unreadCount > 0"
+                                class="absolute top-0 right-0 flex items-center justify-center min-w-[20px] h-5 px-1 text-xs font-bold text-white bg-red-900 rounded-full border-2 border-white"
+                            >
+                                {{ unreadCount }}
+                            </span>
+                        </button>
+
+                        <!-- Notification Dropdown -->
+                        <div
+                            v-if="notificationDropdownOpen"
+                            class="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border border-gray-200 z-50 max-h-96 overflow-hidden"
+                        >
+                            <div class="px-4 py-3 border-b border-gray-200">
+                                <h3 class="text-sm font-semibold text-gray-900">Notifications</h3>
+                            </div>
+                            
+                            <div class="overflow-y-auto max-h-80">
+                                <div v-if="loadingNotifications" class="p-4 text-center text-gray-500">
+                                    Loading...
+                                </div>
+                                
+                                <div v-else-if="notifications.length === 0" class="p-4 text-center text-gray-500">
+                                    No notifications
+                                </div>
+                                
+                                <div v-else>
+                                    <div
+                                        v-for="notification in notifications"
+                                        :key="notification.id"
+                                        @click="handleNotificationClick(notification)"
+                                        :class="[
+                                            'px-4 py-3 border-b border-gray-100 hover:bg-gray-50 cursor-pointer transition-colors',
+                                            !notification.is_read ? 'bg-blue-50' : ''
+                                        ]"
+                                    >
+                                        <div class="flex items-start gap-3">
+                                            <div class="flex-shrink-0 mt-1">
+                                                <div class="w-2 h-2 bg-red-900 rounded-full" v-if="!notification.is_read"></div>
+                                            </div>
+                                            <div class="flex-1 min-w-0">
+                                                <p class="text-sm font-medium text-gray-900">
+                                                    {{ notification.data.message }}
+                                                </p>
+                                                <p class="text-xs text-gray-500 mt-1">
+                                                    {{ timeAgo(notification.created_at) }}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
 
                     <!-- User Menu -->
                     <div class="relative">
@@ -281,6 +408,10 @@ const isCurrentRoute = (routeName) => {
             </main>
         </div>
     </div>
+
+    <!-- Offline Indicators -->
+    <OfflineSyncIndicator />
+    <OfflineLoadingIndicator />
 </template>
 
 <style scoped>

@@ -13,21 +13,40 @@ class PushNotificationController extends Controller
      */
     public function subscribe(Request $request)
     {
+        // Try to get authenticated user from either web or api guard
+        $user = Auth::guard('web')->user() ?? Auth::guard('api')->user();
+        
+        // Debug logging
+        \Log::info('Push subscribe request received', [
+            'has_session' => $request->hasSession(),
+            'session_id' => $request->hasSession() ? $request->session()->getId() : null,
+            'web_auth' => Auth::guard('web')->check(),
+            'web_user' => Auth::guard('web')->id(),
+            'api_auth' => Auth::guard('api')->check(),
+            'api_user' => Auth::guard('api')->id(),
+            'has_bearer' => $request->bearerToken() !== null,
+            'cookies' => array_keys($request->cookies->all()),
+            'user_found' => $user !== null,
+        ]);
+        
+        if (!$user) {
+            \Log::warning('Push subscribe failed - no authenticated user');
+            return response()->json([
+                'success' => false,
+                'message' => 'User not authenticated. Please log in.',
+                'debug' => [
+                    'web_auth' => Auth::guard('web')->check(),
+                    'api_auth' => Auth::guard('api')->check(),
+                ],
+            ], 401);
+        }
+        
         $validated = $request->validate([
             'endpoint' => 'required|string',
             'keys' => 'required|array',
             'keys.p256dh' => 'required|string',
             'keys.auth' => 'required|string',
         ]);
-
-        $user = Auth::user() ?? auth('api')->user();
-        
-        if (!$user) {
-            return response()->json([
-                'success' => false,
-                'message' => 'User not authenticated',
-            ], 401);
-        }
 
         // Check if subscription already exists
         $existingSubscription = $user->pushSubscriptions()
@@ -71,7 +90,7 @@ class PushNotificationController extends Controller
             'endpoint' => 'required|string',
         ]);
 
-        $user = Auth::user() ?? auth('api')->user();
+        $user = Auth::guard('web')->user() ?? Auth::guard('api')->user();
         
         if (!$user) {
             return response()->json([
@@ -105,7 +124,7 @@ class PushNotificationController extends Controller
      */
     public function sendTest(Request $request)
     {
-        $user = Auth::user() ?? auth('api')->user();
+        $user = Auth::guard('web')->user() ?? Auth::guard('api')->user();
         
         if (!$user) {
             return response()->json([

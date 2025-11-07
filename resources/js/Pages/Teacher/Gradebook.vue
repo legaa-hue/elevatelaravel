@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import AdminLayout from '@/Layouts/AdminLayout.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
 
 const props = defineProps({
     course: Object,
@@ -11,6 +13,11 @@ const props = defineProps({
     submissions: Array,
     gradebook: { type: Object, default: null }
 });
+
+// Offline composables
+const { isOnline } = useOfflineSync();
+const { updateGradebookOffline, cacheGradebook, getCachedGradebook } = useTeacherOffline();
+const isFromCache = ref(false);
 
 // Debug: Check if students are being passed
 console.log('Gradebook Students Prop:', props.students);
@@ -122,6 +129,68 @@ props.students.forEach(student => {
     };
 });
 
+// Populate grades from submissions
+const populateGradesFromSubmissions = () => {
+    console.log('[Gradebook] Populating grades from submissions...');
+    
+    if (!props.students || !Array.isArray(props.students)) {
+        console.warn('[Gradebook] No students data available');
+        return;
+    }
+    
+    // Process each student's submissions
+    props.students.forEach(student => {
+        if (!student.submissions || !Array.isArray(student.submissions)) {
+            console.log(`[Gradebook] Student ${student.name} has no submissions`);
+            return;
+        }
+        
+        // Filter to graded/returned submissions only
+        const gradedSubmissions = student.submissions.filter(sub => 
+            ['graded', 'returned'].includes(sub.status) && sub.grade !== null && sub.grade !== undefined
+        );
+        
+        console.log(`[Gradebook] Student ${student.name} has ${gradedSubmissions.length} graded submissions`);
+        
+        gradedSubmissions.forEach(submission => {
+            const classwork = props.classworks.find(cw => cw.id === submission.classwork_id);
+            
+            if (!classwork) {
+                console.warn(`[Gradebook] Classwork not found for submission ${submission.id}`);
+                return;
+            }
+            
+            // For now, auto-populate into the "written-works" subcolumn if it's an assignment/quiz/activity
+            const writtenWorksTypes = ['assignment', 'quiz', 'activity'];
+            if (writtenWorksTypes.includes(classwork.type)) {
+                const subcolId = `classwork-${classwork.id}`;
+                
+                // Populate for both midterm and finals periods
+                const periods = ['midterm', 'finals'];
+                
+                periods.forEach(period => {
+                    // The grade key format must match: ${tableKey}-${columnId}-${subcolumnId}
+                    // Table: asynchronous, Column: written-works, Subcolumn: classwork-{id}
+                    const gradeKey = `asynchronous-written-works-${subcolId}`;
+                    
+                    if (!studentGrades.value[student.id]) {
+                        studentGrades.value[student.id] = { midterm: {}, finals: {} };
+                    }
+                    
+                    if (!studentGrades.value[student.id][period]) {
+                        studentGrades.value[student.id][period] = {};
+                    }
+                    
+                    studentGrades.value[student.id][period][gradeKey] = submission.grade;
+                    console.log(`[Gradebook] Set grade for student ${student.name}, ${period}, classwork ${classwork.title}: ${submission.grade}, key: ${gradeKey}`);
+                });
+            }
+        });
+    });
+    
+    console.log('[Gradebook] Grades populated from submissions:', studentGrades.value);
+};
+
 // Helper to deep merge saved table data with default structure
 const mergeTableData = (defaultTable, savedTable) => {
     if (!savedTable) return defaultTable;
@@ -223,9 +292,43 @@ const loadGradebookFromProps = () => {
     }
 };
 
-onMounted(() => {
+onMounted(async () => {
+    // Cache gradebook when online
+    if (isOnline.value && props.gradebook) {
+        await cacheGradebook(props.course.id, props.gradebook);
+        isFromCache.value = false;
+    } else if (!isOnline.value) {
+        // Load from cache when offline
+        const cached = await getCachedGradebook(props.course.id);
+        if (cached) {
+            isFromCache.value = true;
+        }
+    }
+    
     loadGradebookFromProps();
+    populateGradesFromSubmissions();
 });
+
+// Watch for changes in students data (including their submissions) to refresh grades
+watch(
+    () => props.students,
+    () => {
+        console.log('[Gradebook] Students data changed, refreshing grades...');
+        populateGradesFromSubmissions();
+    },
+    { deep: true }
+);
+
+// Watch for changes in classworks to refresh grade structure and grades
+watch(
+    () => props.classworks,
+    () => {
+        console.log('[Gradebook] Classworks changed, refreshing grade structure...');
+        populateWrittenWorksFromClassworks();
+        populateGradesFromSubmissions();
+    },
+    { deep: true }
+);
 
 // Helpers to prepare and send save request
 const getTablesForPeriod = (period) => {
@@ -241,7 +344,7 @@ const getTablesForPeriod = (period) => {
     };
 };
 
-const saveGradebookForPeriod = (period) => {
+const saveGradebookForPeriod = async (period) => {
     if (!period) return;
 
     // Prepare tableStructure
@@ -264,9 +367,18 @@ const saveGradebookForPeriod = (period) => {
         tableStructure: tableStructure,
         midtermPercentage: midtermPercentage.value,
         finalsPercentage: finalsPercentage.value,
+        courseId: props.course.id
     };
 
-    // Post to server
+    // Handle offline mode
+    if (!isOnline.value) {
+        // Save with proper signature: (courseId, gradebookData)
+        await updateGradebookOffline(props.course.id, payload);
+        alert('✓ Gradebook saved offline. Will sync when online.');
+        return;
+    }
+
+    // Post to server (online mode)
     try {
         router.post(route('teacher.courses.gradebook.save', { course: props.course.id }), payload, {
             preserveScroll: true,
@@ -871,6 +983,19 @@ const getCustomGrade = (studentId, tableId, columnId, subcolumnId) => {
 
     <component :is="LayoutComponent">
         <div class="max-w-[1800px] mx-auto space-y-6 p-6">
+            <!-- Cache Indicator -->
+            <div 
+                v-if="isFromCache"
+                class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md"
+            >
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-yellow-800 font-medium">📊 Viewing Cached Gradebook (Offline Mode) - Edits will sync when online</p>
+                </div>
+            </div>
+            
             <!-- Simple Header with Back Navigation -->
             <div class="bg-white rounded-lg shadow-md overflow-hidden">
                 <div class="p-4 border-b border-gray-200 bg-white">
@@ -1147,7 +1272,14 @@ const getCustomGrade = (studentId, tableId, columnId, subcolumnId) => {
                                                 min="0"
                                                 :max="subcol.maxPoints"
                                                 step="0.5"
-                                                class="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                                                :disabled="subcol.isAutoFetched"
+                                                :class="[
+                                                    'w-16 px-2 py-1 border rounded text-center text-sm',
+                                                    subcol.isAutoFetched 
+                                                        ? 'bg-blue-50 border-blue-300 cursor-not-allowed text-blue-700 font-semibold' 
+                                                        : 'bg-white border-gray-300'
+                                                ]"
+                                                :title="subcol.isAutoFetched ? 'Auto-fetched from classwork submission' : 'Manual entry'"
                                             />
                                         </td>
                                     </template>
@@ -1306,7 +1438,14 @@ const getCustomGrade = (studentId, tableId, columnId, subcolumnId) => {
                                                 min="0"
                                                 :max="subcol.maxPoints"
                                                 step="0.5"
-                                                class="w-16 px-2 py-1 border border-gray-300 rounded text-center text-sm"
+                                                :disabled="subcol.isAutoFetched"
+                                                :class="[
+                                                    'w-16 px-2 py-1 border rounded text-center text-sm',
+                                                    subcol.isAutoFetched 
+                                                        ? 'bg-blue-50 border-blue-300 cursor-not-allowed text-blue-700 font-semibold' 
+                                                        : 'bg-white border-gray-300'
+                                                ]"
+                                                :title="subcol.isAutoFetched ? 'Auto-fetched from classwork submission' : 'Manual entry'"
                                             />
                                         </td>
                                     </template>

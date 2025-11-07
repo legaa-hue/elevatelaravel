@@ -1,0 +1,316 @@
+/**
+ * Inertia Offline Handler
+ * Intercepts Inertia requests when offline and serves cached page data
+ */
+
+import { router } from '@inertiajs/vue3';
+import offlineStorage from './offline-storage';
+
+class InertiaOfflineHandler {
+    constructor() {
+        this.initialized = false;
+        this.resolveComponent = null;
+        this.componentCache = new Map(); // Cache resolved components in memory
+        this.isHandlingOffline = false; // Prevent infinite loops
+    }
+
+    /**
+     * Set the component resolver function
+     */
+    setResolveComponent(resolver) {
+        this.resolveComponent = resolver;
+        console.log('📄 Component resolver stored');
+    }
+    
+    /**
+     * Cache a resolved component module
+     */
+    cacheComponent(name, componentModule) {
+        this.componentCache.set(name, componentModule);
+        console.log(`💾 Cached component: ${name}`);
+    }
+    
+    /**
+     * Get cached component module
+     */
+    getCachedComponent(name) {
+        return this.componentCache.get(name);
+    }
+
+    /**
+     * Initialize the offline handler
+     */
+    async init() {
+        if (this.initialized) return;
+
+        console.log('🔧 Initializing Inertia Offline Handler');
+        
+        const self = this;
+        
+        // Intercept Inertia's before event
+        router.on('before', (event) => {
+            // Skip if already handling or online
+            if (self.isHandlingOffline || navigator.onLine) return;
+            
+            const url = event.detail.visit.url.href || event.detail.visit.url;
+            console.log('🔍 Offline navigation attempt to:', url);
+            
+            // Prevent the default navigation
+            event.preventDefault();
+            
+            // Set flag to prevent re-entry
+            self.isHandlingOffline = true;
+            
+            // Handle asynchronously
+            (async () => {
+                try {
+                    // Check if we have cached data
+                    const cachedPage = await self.getCachedPageData(url);
+                    
+                    if (!cachedPage) {
+                        console.log('❌ No cached page found');
+                        alert('This page is not available offline');
+                        return;
+                    }
+                    
+                    console.log('✅ Found cached page:', cachedPage.component);
+                    
+                    // Check if component is cached
+                    const cachedComponent = self.getCachedComponent(cachedPage.component);
+                    if (!cachedComponent) {
+                        console.error(`❌ Component ${cachedPage.component} not in cache`);
+                        alert('This page was not fully cached.');
+                        return;
+                    }
+                    
+                    console.log('📦 Component available in cache');
+                    
+                    // Create proper Inertia page object
+                    const page = {
+                        component: cachedPage.component,
+                        props: cachedPage.props || {},
+                        url: url,
+                        version: cachedPage.version || null,
+                        scrollRegions: [],
+                        rememberedState: {}
+                    };
+                    
+                    // Intercept XMLHttpRequest (Axios) instead of fetch
+                    const OriginalXHR = window.XMLHttpRequest;
+                    let interceptorUsed = false;
+                    
+                    window.XMLHttpRequest = function() {
+                        const xhr = new OriginalXHR();
+                        const originalOpen = xhr.open;
+                        const originalSend = xhr.send;
+                        const originalAbort = xhr.abort;
+                        let shouldIntercept = false;
+                        let requestUrl = '';
+                        
+                        xhr.open = function(method, url, ...args) {
+                            requestUrl = url;
+                            // Check if we should intercept this specific request
+                            shouldIntercept = !interceptorUsed && requestUrl === url;
+                            
+                            if (!shouldIntercept) {
+                                // Only call original open for non-intercepted requests
+                                return originalOpen.apply(this, [method, url, ...args]);
+                            }
+                            // For intercepted requests, don't actually open a connection
+                        };
+                        
+                        xhr.send = function(body) {
+                            // Intercept THIS specific offline request
+                            if (shouldIntercept) {
+                                console.log('🎯 XHR Intercepted - mocking response');
+                                interceptorUsed = true;
+                                shouldIntercept = false;
+                                
+                                // Simulate successful response WITHOUT network request
+                                const self = this;
+                                
+                                // Immediately set to loading state
+                                Object.defineProperty(self, 'readyState', { 
+                                    value: 2, // HEADERS_RECEIVED
+                                    writable: true,
+                                    configurable: true 
+                                });
+                                
+                                setTimeout(() => {
+                                    // Set final response properties
+                                    Object.defineProperty(self, 'status', { 
+                                        value: 200, 
+                                        writable: false,
+                                        configurable: true 
+                                    });
+                                    Object.defineProperty(self, 'statusText', { 
+                                        value: 'OK', 
+                                        writable: false,
+                                        configurable: true 
+                                    });
+                                    
+                                    const responseData = JSON.stringify(page);
+                                    
+                                    Object.defineProperty(self, 'responseText', { 
+                                        value: responseData, 
+                                        writable: false,
+                                        configurable: true 
+                                    });
+                                    Object.defineProperty(self, 'response', { 
+                                        value: responseData, 
+                                        writable: false,
+                                        configurable: true 
+                                    });
+                                    Object.defineProperty(self, 'readyState', { 
+                                        value: 4, // DONE
+                                        writable: false,
+                                        configurable: true 
+                                    });
+                                    
+                                    // Set response headers
+                                    self.getAllResponseHeaders = () => 
+                                        'content-type: application/json\r\nx-inertia: true\r\nx-inertia-version: ' + (page.version || '');
+                                    self.getResponseHeader = (name) => {
+                                        const headers = {
+                                            'content-type': 'application/json',
+                                            'x-inertia': 'true',
+                                            'x-inertia-version': page.version || ''
+                                        };
+                                        return headers[name.toLowerCase()] || null;
+                                    };
+                                    
+                                    // Create and dispatch events
+                                    if (self.onreadystatechange) {
+                                        self.onreadystatechange.call(self);
+                                    }
+                                    
+                                    const loadEvent = new ProgressEvent('load', {
+                                        lengthComputable: true,
+                                        loaded: responseData.length,
+                                        total: responseData.length
+                                    });
+                                    
+                                    if (self.onload) {
+                                        self.onload.call(self, loadEvent);
+                                    }
+                                    
+                                    // Restore XHR after successful mock response
+                                    window.XMLHttpRequest = OriginalXHR;
+                                    console.log('✅ XHR mock response sent, XHR restored');
+                                }, 10);
+                                
+                                // DON'T call original send
+                                return;
+                            }
+                            
+                            // Other requests proceed normally
+                            return originalSend.apply(this, arguments);
+                        };
+                        
+                        // Override abort to handle intercepted requests
+                        xhr.abort = function() {
+                            if (shouldIntercept) {
+                                // Don't abort intercepted requests
+                                return;
+                            }
+                            return originalAbort.apply(this, arguments);
+                        };
+                        
+                        return xhr;
+                    };
+                    
+                    // Copy static properties
+                    Object.setPrototypeOf(window.XMLHttpRequest, OriginalXHR);
+                    window.XMLHttpRequest.prototype = OriginalXHR.prototype;
+                    
+                    // Trigger new visit with interceptor ready
+                    console.log('🚀 Starting offline visit with XHR interceptor');
+                    router.visit(url, {
+                        preserveScroll: false,
+                        preserveState: false,
+                        replace: false,
+                        onFinish: () => {
+                            // XHR already restored in mock response callback
+                            self.isHandlingOffline = false;
+                            console.log('✅ Offline navigation complete');
+                        }
+                    });
+                } catch (error) {
+                    console.error('❌ Offline navigation failed:', error);
+                    self.isHandlingOffline = false;
+                    // Restore XHR if needed
+                    if (window.XMLHttpRequest !== window.XMLHttpRequest.constructor) {
+                        window.XMLHttpRequest = window.XMLHttpRequest.constructor;
+                    }
+                }
+            })();
+        });
+
+        this.initialized = true;
+        console.log('✅ Inertia offline handler initialized');
+    }
+
+    /**
+     * Get cached page data from IndexedDB
+     */
+    async getCachedPageData(url) {
+        try {
+            const urlObj = new URL(url, window.location.origin);
+            const cacheKey = urlObj.pathname;
+            
+            const cached = await offlineStorage.get('visitedPages', cacheKey);
+            
+            if (cached && cached.component) {
+                return {
+                    component: cached.component,
+                    props: cached.props || {},
+                    url: cacheKey,
+                    version: cached.version
+                };
+            }
+            
+            return null;
+        } catch (error) {
+            console.error('Failed to get cached page:', error);
+            return null;
+        }
+    }
+
+    /**
+     * Preload critical pages for offline use
+     */
+    async preloadPages(urls) {
+        if (!navigator.onLine) {
+            console.warn('Cannot preload - offline');
+            return;
+        }
+
+        console.log(`📦 Preloading ${urls.length} pages...`);
+
+        for (const url of urls) {
+            try {
+                await fetch(url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'X-Inertia': 'true',
+                        'X-Inertia-Version': document.querySelector('meta[name="inertia-version"]')?.content || ''
+                    }
+                });
+
+                console.log(`✅ Preloaded: ${url}`);
+            } catch (error) {
+                console.warn(`Failed to preload ${url}:`, error);
+            }
+        }
+    }
+}
+
+// Create singleton
+const inertiaOfflineHandler = new InertiaOfflineHandler();
+
+// Make globally available
+if (typeof window !== 'undefined') {
+    window.inertiaOfflineHandler = inertiaOfflineHandler;
+}
+
+export default inertiaOfflineHandler;

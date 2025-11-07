@@ -2,10 +2,16 @@
 import { Head, useForm } from '@inertiajs/vue3';
 import StudentLayout from '@/Layouts/StudentLayout.vue';
 import InfoTooltip from '@/Components/InfoTooltip.vue';
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { useOfflineFiles } from '@/composables/useOfflineFiles';
+import { useOfflineSync } from '@/composables/useOfflineSync';
 
 const props = defineProps({
     course: Object,
+    gradeAccess: {
+        type: Object,
+        default: () => ({ granted: false, requested: false })
+    },
     courseGrades: Object,
     classworks: Array,
     pendingClassworks: Array,
@@ -37,6 +43,10 @@ const submissionFiles = ref([]);
 const linkSubmission = ref('');
 const quizAnswers = ref({});
 const showCorrectAnswers = ref(false);
+
+// Offline files helper
+const { downloadClassworkAttachments, downloadFiles, isFileCached } = useOfflineFiles();
+const { saveOfflineAction, updatePendingCount, savePendingFiles } = useOfflineSync();
 
 // File preview modal
 const showFilePreviewModal = ref(false);
@@ -154,6 +164,15 @@ const openClassworkModal = (classwork) => {
             quizAnswers.value = { ...classwork.submission.quiz_answers };
         }
     }
+
+    // Proactively cache teacher attachments for offline viewing
+    if (classwork.attachments && classwork.attachments.length > 0 && navigator.onLine) {
+        try {
+            downloadClassworkAttachments(classwork);
+        } catch (e) {
+            console.warn('Prefetch attachments failed:', e);
+        }
+    }
 };
 
 const closeClassworkModal = () => {
@@ -217,10 +236,10 @@ const isOfficeDocument = (filename) => {
 };
 
 const getOfficeViewerUrl = (fileUrl) => {
-    // Use Microsoft Office Online Viewer for better compatibility
+    // Use Google Docs Viewer as it works better with local files
     // Need to convert relative URL to absolute URL
     const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
+    return `https://docs.google.com/gview?url=${encodeURIComponent(absoluteUrl)}&embedded=true`;
 };
 
 const handleFileUpload = (event) => {
@@ -273,7 +292,31 @@ const submitWork = () => {
         submissionForm.quiz_answers = quizAnswers.value;
     }
     
-    submissionForm.post(route('student.classwork.submit', selectedClasswork.value.id), {
+    // If offline, save to pending actions with files and exit gracefully
+    if (!navigator.onLine) {
+        const payload = {
+            classwork_id: selectedClasswork.value.id,
+            content: submissionForm.content || '',
+            link: submissionForm.link || '',
+            quiz_answers: submissionForm.quiz_answers || {},
+        };
+        saveOfflineAction('submit_classwork', payload)
+            .then(async (res) => {
+                if (res?.id && submissionFiles.value?.length) {
+                    await savePendingFiles(res.id, submissionFiles.value);
+                }
+                closeClassworkModal();
+                alert('Submission saved offline. It will sync automatically when you are online.');
+                await updatePendingCount();
+            })
+            .catch((e) => {
+                console.error('Failed to save offline submission:', e);
+                alert('Could not save submission offline. Please try again.');
+            });
+        return;
+    }
+
+    const postPromise = submissionForm.post(route('student.classwork.submit', selectedClasswork.value.id), {
         forceFormData: true,
         preserveScroll: true,
         onSuccess: (page) => {
@@ -289,6 +332,28 @@ const submitWork = () => {
                 errorMsg += `${key}: ${errors[key]}\n`;
             });
             alert(errorMsg);
+        }
+    });
+    // Catch network errors (e.g., offline mid-request) and queue offline
+    postPromise.catch(async (err) => {
+        console.warn('Network error during submission, storing offline:', err?.message || err);
+        const payload = {
+            classwork_id: selectedClasswork.value.id,
+            content: submissionForm.content || '',
+            link: submissionForm.link || '',
+            quiz_answers: submissionForm.quiz_answers || {},
+        };
+        try {
+            const res = await saveOfflineAction('submit_classwork', payload);
+            if (res?.id && submissionFiles.value?.length) {
+                await savePendingFiles(res.id, submissionFiles.value);
+            }
+            closeClassworkModal();
+            alert('No connection. Your submission was saved offline and will sync when you are online.');
+            await updatePendingCount();
+        } catch (e) {
+            console.error('Failed to save submission offline after error:', e);
+            alert('Submission failed and could not be saved offline. Please try again later.');
         }
     });
 };
@@ -309,6 +374,74 @@ const unsubmitWork = () => {
         });
     }
 };
+
+const requestGradeAccess = () => {
+    const form = useForm({});
+    form.post(route('student.courses.request-grade-access', props.course.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            // Page will reload with updated gradeAccess data
+        },
+        onError: (errors) => {
+            console.error('Request error:', errors);
+        }
+    });
+};
+
+// Prefetch all attachments for current course materials (pending + completed)
+const prefetchAllVisibleAttachments = async () => {
+    try {
+        if (!navigator.onLine) return; // skip offline
+        const urls = [];
+        const collect = (arr) => {
+            (arr || []).forEach(cw => {
+                (cw.attachments || []).forEach(att => {
+                    if (att?.path) urls.push(`/storage/${att.path}`);
+                    else if (att?.url) urls.push(att.url);
+                });
+                // Also prefetch submission attachments shown to the student
+                if (cw.submission && cw.submission.attachments) {
+                    cw.submission.attachments.forEach(att => {
+                        if (att?.path) urls.push(`/storage/${att.path}`);
+                        else if (att?.url) urls.push(att.url);
+                    });
+                }
+            });
+        };
+        collect(props.pendingClassworks);
+        collect(props.completedClassworks);
+
+        // Filter to only those not cached yet
+        const uniqueUrls = Array.from(new Set(urls));
+        const checks = await Promise.all(uniqueUrls.map(u => isFileCached(u)));
+        const toDownload = uniqueUrls.filter((u, idx) => !checks[idx]);
+        if (toDownload.length > 0) {
+            await downloadFiles(toDownload, props.course?.id || null);
+        }
+    } catch (e) {
+        console.warn('Prefetch course attachments failed:', e);
+    }
+};
+
+// Listen to global event fired after sync to prefetch fresh attachments
+const onClassworksUpdated = () => {
+    prefetchAllVisibleAttachments();
+};
+
+onMounted(() => {
+    window.addEventListener('app:classworks-updated', onClassworksUpdated);
+    // Initial prefetch on mount
+    prefetchAllVisibleAttachments();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('app:classworks-updated', onClassworksUpdated);
+});
+
+// Also react when lists change due to navigation/partial reloads
+watch(() => [props.pendingClassworks, props.completedClassworks], () => {
+    prefetchAllVisibleAttachments();
+});
 </script>
 
 <template>
@@ -907,55 +1040,98 @@ const unsubmitWork = () => {
 
                     <!-- Grades Tab -->
                     <div v-if="activeTab === 'grades'" class="space-y-6">
-                        <!-- Overall Grade -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-sm font-medium text-gray-700 mb-2">Overall Grade</h3>
-                            <div class="flex items-baseline gap-2">
-                                <span class="text-4xl font-bold text-gray-900">{{ courseGrades?.overall_percentage || '0.00' }}%</span>
-                                <span class="text-sm text-gray-500">Earned {{ courseGrades?.total_earned || 0 }}/{{ courseGrades?.total_points || 0 }} pts</span>
-                            </div>
-                        </div>
-
-                        <!-- Term Grades -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Term Grades</h3>
-                            <div class="grid grid-cols-3 gap-4">
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Midterm</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.midterm || '—' }}</p>
-                                </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Tentative Final</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.tentative_final || '—' }}</p>
-                                </div>
-                                <div class="text-center">
-                                    <p class="text-sm text-gray-600 mb-1">Final</p>
-                                    <p class="text-2xl font-bold text-gray-900">{{ courseGrades?.final || '—' }}</p>
+                        <!-- Header -->
+                        <div class="bg-gradient-to-r from-red-900 to-red-700 rounded-lg p-6 text-white shadow-lg">
+                            <div class="flex items-center gap-3">
+                                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+                                </svg>
+                                <div>
+                                    <h2 class="text-2xl font-bold">My Grades</h2>
+                                    <p class="text-red-200 text-sm">Academic Performance Summary</p>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Category Breakdown -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <h3 class="text-lg font-semibold text-gray-900 mb-4">Category Breakdown</h3>
+                        <!-- Access Not Granted -->
+                        <div v-if="!gradeAccess.granted" class="bg-white rounded-lg shadow-lg p-12 text-center">
+                            <div class="max-w-md mx-auto space-y-6">
+                                <div class="flex justify-center">
+                                    <div class="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center">
+                                        <svg class="w-12 h-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                                        </svg>
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-xl font-bold text-gray-900 mb-2">Grades Not Yet Available</h3>
+                                    <p class="text-gray-600">
+                                        Your teacher controls access to grades. Request permission to view your academic performance.
+                                    </p>
+                                </div>
+
+                                <div v-if="gradeAccess.requested" class="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                                    <div class="flex items-center gap-3">
+                                        <svg class="w-6 h-6 text-yellow-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                        </svg>
+                                        <div class="text-left">
+                                            <p class="font-medium text-yellow-800">Request Pending</p>
+                                            <p class="text-sm text-yellow-700">Your teacher will review your request soon.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <button 
+                                    v-else
+                                    @click="requestGradeAccess"
+                                    class="w-full bg-gradient-to-r from-red-900 to-red-700 hover:from-red-800 hover:to-red-600 text-white font-semibold py-4 px-6 rounded-lg shadow-lg transition-all duration-200 flex items-center justify-center gap-2"
+                                >
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
+                                    </svg>
+                                    Request Access to View Grades
+                                </button>
+
+                                <p class="text-sm text-gray-500">
+                                    <svg class="w-4 h-4 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Your teacher will be notified of your request
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Grades Summary Table (when access granted) -->
+                        <div v-else class="bg-white rounded-lg shadow-lg overflow-hidden border border-gray-200">
                             <div class="overflow-x-auto">
-                                <table class="min-w-full divide-y divide-gray-200">
-                                    <thead>
+                                <table class="w-full">
+                                    <thead class="bg-gradient-to-r from-red-900 to-red-700">
                                         <tr>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Category</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Points</th>
-                                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Percent</th>
+                                            <th class="px-8 py-5 text-center text-lg font-bold text-white uppercase border-r border-red-600">
+                                                Midterm Grade
+                                            </th>
+                                            <th class="px-8 py-5 text-center text-lg font-bold text-white uppercase">
+                                                Final Grade
+                                            </th>
                                         </tr>
                                     </thead>
-                                    <tbody class="divide-y divide-gray-200">
-                                        <tr v-for="category in courseGrades?.categories || []" :key="category.name">
-                                            <td class="px-4 py-4 text-sm text-gray-900">{{ category.name }}</td>
-                                            <td class="px-4 py-4 text-sm text-gray-600">{{ category.earned }}/{{ category.total }} pts</td>
-                                            <td class="px-4 py-4 text-sm text-gray-900">{{ category.percentage }}</td>
-                                        </tr>
-                                        <tr v-if="!courseGrades?.categories || courseGrades.categories.length === 0">
-                                            <td colspan="3" class="px-4 py-8 text-center text-gray-500">
-                                                No grades available yet
+                                    <tbody>
+                                        <tr class="border-t border-gray-200">
+                                            <td class="px-8 py-8 text-center border-r border-gray-200 bg-blue-50">
+                                                <span class="text-5xl font-bold" 
+                                                      :class="courseGrades?.midterm !== '—' && parseFloat(courseGrades.midterm) <= 1.75 ? 'text-green-600' : courseGrades?.midterm === '—' ? 'text-gray-400' : 'text-red-600'">
+                                                    {{ courseGrades?.midterm || '—' }}
+                                                </span>
+                                                <p class="text-sm text-gray-500 mt-2">Midterm Period</p>
+                                            </td>
+                                            <td class="px-8 py-8 text-center bg-purple-50">
+                                                <span class="text-5xl font-bold" 
+                                                      :class="courseGrades?.final !== '—' && parseFloat(courseGrades.final) <= 1.75 ? 'text-green-600' : courseGrades?.final === '—' ? 'text-gray-400' : 'text-red-600'">
+                                                    {{ courseGrades?.final || '—' }}
+                                                </span>
+                                                <p class="text-sm text-gray-500 mt-2">Finals Period</p>
                                             </td>
                                         </tr>
                                     </tbody>
@@ -963,94 +1139,30 @@ const unsubmitWork = () => {
                             </div>
                         </div>
 
-                        <!-- My Gradebook -->
-                        <div class="bg-white border border-gray-200 rounded-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <h3 class="text-lg font-semibold text-gray-900 flex items-center gap-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                    </svg>
-                                    My Gradebook
-                                </h3>
-                            </div>
-                            <p class="text-sm text-gray-500 mb-4">All your graded work</p>
-                            
-                            <!-- Graded Submissions List -->
-                            <div v-if="completedClassworks && completedClassworks.length > 0" class="space-y-3">
-                                <div v-for="work in completedClassworks.filter(w => w.submission && w.submission.grade !== null)" :key="work.id"
-                                     class="border border-gray-200 rounded-lg p-4 hover:shadow-md transition">
-                                    <div class="flex items-start justify-between">
-                                        <div class="flex-1">
-                                            <div class="flex items-center gap-2 mb-2">
-                                                <span class="px-2 py-1 text-xs font-medium rounded"
-                                                      :class="{
-                                                          'bg-blue-100 text-blue-800': work.type === 'assignment',
-                                                          'bg-green-100 text-green-800': work.type === 'activity',
-                                                          'bg-purple-100 text-purple-800': work.type === 'quiz',
-                                                          'bg-gray-100 text-gray-800': work.type === 'lesson'
-                                                      }">
-                                                    {{ work.type.charAt(0).toUpperCase() + work.type.slice(1) }}
-                                                </span>
-                                                <span v-if="work.submission.status === 'graded'" 
-                                                      class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">
-                                                    Graded
-                                                </span>
-                                                <span v-if="work.submission.status === 'returned'" 
-                                                      class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
-                                                    Returned
-                                                </span>
-                                            </div>
-                                            <h4 class="font-semibold text-gray-900 mb-1">{{ work.title }}</h4>
-                                            <p v-if="work.due_date" class="text-xs text-gray-500">
-                                                Due: {{ work.due_date }}
-                                            </p>
-                                            <p v-if="work.submission.graded_at" class="text-xs text-gray-500">
-                                                Graded: {{ new Date(work.submission.graded_at).toLocaleDateString() }}
-                                            </p>
-                                        </div>
-                                        <div class="text-right">
-                                            <div class="text-2xl font-bold"
-                                                 :class="{
-                                                     'text-green-600': (work.submission.grade / work.points) >= 0.9,
-                                                     'text-blue-600': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
-                                                     'text-yellow-600': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
-                                                     'text-red-600': (work.submission.grade / work.points) < 0.6
-                                                 }">
-                                                {{ work.submission.grade }}/{{ work.points }}
-                                            </div>
-                                            <div class="text-sm text-gray-600">
-                                                {{ work.points > 0 ? Math.round((work.submission.grade / work.points) * 100) : 0 }}%
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Progress Bar -->
-                                    <div class="mt-3 w-full bg-gray-200 rounded-full h-2 overflow-hidden">
-                                        <div class="h-2 rounded-full transition-all"
-                                             :class="{
-                                                 'bg-green-500': (work.submission.grade / work.points) >= 0.9,
-                                                 'bg-blue-500': (work.submission.grade / work.points) >= 0.75 && (work.submission.grade / work.points) < 0.9,
-                                                 'bg-yellow-500': (work.submission.grade / work.points) >= 0.6 && (work.submission.grade / work.points) < 0.75,
-                                                 'bg-red-500': (work.submission.grade / work.points) < 0.6
-                                             }"
-                                             :style="{ width: (work.points > 0 ? Math.min((work.submission.grade / work.points) * 100, 100) : 0) + '%' }">
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Feedback -->
-                                    <div v-if="work.submission.feedback" class="mt-3 bg-blue-50 border border-blue-200 rounded-lg p-3">
-                                        <p class="text-xs font-semibold text-blue-900 mb-1">Teacher Feedback:</p>
-                                        <p class="text-sm text-blue-800">{{ work.submission.feedback }}</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- No Graded Work -->
-                            <div v-else class="text-center py-8 text-gray-500">
-                                <svg class="mx-auto h-12 w-12 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <!-- Grading Scale Legend (when access granted) -->
+                        <div v-if="gradeAccess.granted" class="bg-white rounded-lg shadow-md p-6">
+                            <h3 class="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                                <svg class="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <p class="mt-2">No graded assignments yet</p>
+                                Grading Scale Information
+                            </h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="text-sm">1.75 and below: Passing (Masteral)</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span class="text-sm">1.45 and below: Passing (Doctorate)</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-red-500"></div>
+                                    <span class="text-sm">Above passing grade: Needs Improvement</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm font-medium">Scale: 1.0 (Excellent) - 5.0 (Failed)</span>
+                                </div>
                             </div>
                         </div>
                     </div>

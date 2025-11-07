@@ -19,6 +19,10 @@ class GradeSheetController extends Controller
             abort(403, 'Unauthorized access to this course.');
         }
 
+        // Load program relationship first
+        $course->load('program');
+        $passingGrade = $this->getPassingGrade($course);
+
         // Get enrolled students with their grades
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -29,38 +33,42 @@ class GradeSheetController extends Controller
 
         $gradebook = $course->gradebook ?? null;
 
-        $studentsWithGrades = $students->map(function ($student) use ($gradebook) {
+        $studentsWithGrades = $students->map(function ($student) use ($gradebook, $passingGrade) {
             $midtermGrade = 0;
             $finalsGrade = 0;
+            
             if ($gradebook) {
                 $midtermPercentage = $gradebook['midtermPercentage'] ?? 50;
                 $finalsPercentage = $gradebook['finalsPercentage'] ?? 50;
-                if (isset($gradebook['midterm']['grades'][$student->id])) {
-                    $midtermGrade = $this->calculatePeriodGrade(
-                        $student->id,
-                        $gradebook['midterm'],
-                        'midterm'
-                    );
+                
+                // Check if we have pre-calculated periodGrades (from gradebook UI)
+                if (isset($gradebook['midterm']['periodGrades'][$student->id])) {
+                    $midtermGrade = (float)$gradebook['midterm']['periodGrades'][$student->id];
+                } else if (isset($gradebook['midterm'])) {
+                    // Fallback to calculation
+                    $midtermGrade = $this->calculatePeriodGrade($gradebook, 'midterm', $student->id);
                 }
-                if (isset($gradebook['finals']['grades'][$student->id])) {
-                    $finalsGrade = $this->calculatePeriodGrade(
-                        $student->id,
-                        $gradebook['finals'],
-                        'finals'
-                    );
+                
+                if (isset($gradebook['finals']['periodGrades'][$student->id])) {
+                    $finalsGrade = (float)$gradebook['finals']['periodGrades'][$student->id];
+                } else if (isset($gradebook['finals'])) {
+                    // Fallback to calculation
+                    $finalsGrade = $this->calculatePeriodGrade($gradebook, 'finals', $student->id);
                 }
+                
                 $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) +
                               ($finalsGrade * ($finalsPercentage / 100));
+                $gradePoint = $this->percentToGradePoint($finalGrade);
                 $student->midterm_grade = round($midtermGrade, 2);
                 $student->finals_grade = round($finalsGrade, 2);
                 $student->final_grade = round($finalGrade, 2);
-                $student->letter_grade = $this->getLetterGrade($finalGrade);
-                $student->remarks = $this->getRemarks($finalGrade);
+                $student->grade_point = number_format($gradePoint, 2);
+                $student->remarks = $this->getRemarks($gradePoint, $passingGrade);
             } else {
                 $student->midterm_grade = 0;
                 $student->finals_grade = 0;
                 $student->final_grade = 0;
-                $student->letter_grade = 'INC';
+                $student->grade_point = '5.00';
                 $student->remarks = 'Incomplete';
             }
             return $student;
@@ -86,6 +94,10 @@ class GradeSheetController extends Controller
             abort(403, 'Unauthorized access to this course.');
         }
 
+        // Load program relationship first
+        $course->load('program');
+        $passingGrade = $this->getPassingGrade($course);
+
         // Get enrolled students with their grades
         $students = $course->students()
             ->select('users.id', 'users.first_name', 'users.last_name', 'users.email')
@@ -96,38 +108,42 @@ class GradeSheetController extends Controller
 
         $gradebook = $course->gradebook ?? null;
 
-        $studentsWithGrades = $students->map(function ($student) use ($gradebook) {
+        $studentsWithGrades = $students->map(function ($student) use ($gradebook, $passingGrade) {
             $midtermGrade = 0;
             $finalsGrade = 0;
+            
             if ($gradebook) {
                 $midtermPercentage = $gradebook['midtermPercentage'] ?? 50;
                 $finalsPercentage = $gradebook['finalsPercentage'] ?? 50;
-                if (isset($gradebook['midterm']['grades'][$student->id])) {
-                    $midtermGrade = $this->calculatePeriodGrade(
-                        $student->id,
-                        $gradebook['midterm'],
-                        'midterm'
-                    );
+                
+                // Check if we have pre-calculated periodGrades (from gradebook UI)
+                if (isset($gradebook['midterm']['periodGrades'][$student->id])) {
+                    $midtermGrade = (float)$gradebook['midterm']['periodGrades'][$student->id];
+                } else if (isset($gradebook['midterm'])) {
+                    // Fallback to calculation
+                    $midtermGrade = $this->calculatePeriodGrade($gradebook, 'midterm', $student->id);
                 }
-                if (isset($gradebook['finals']['grades'][$student->id])) {
-                    $finalsGrade = $this->calculatePeriodGrade(
-                        $student->id,
-                        $gradebook['finals'],
-                        'finals'
-                    );
+                
+                if (isset($gradebook['finals']['periodGrades'][$student->id])) {
+                    $finalsGrade = (float)$gradebook['finals']['periodGrades'][$student->id];
+                } else if (isset($gradebook['finals'])) {
+                    // Fallback to calculation
+                    $finalsGrade = $this->calculatePeriodGrade($gradebook, 'finals', $student->id);
                 }
+                
                 $finalGrade = ($midtermGrade * ($midtermPercentage / 100)) +
                               ($finalsGrade * ($finalsPercentage / 100));
+                $gradePoint = $this->percentToGradePoint($finalGrade);
                 $student->midterm_grade = round($midtermGrade, 2);
                 $student->finals_grade = round($finalsGrade, 2);
                 $student->final_grade = round($finalGrade, 2);
-                $student->letter_grade = $this->getLetterGrade($finalGrade);
-                $student->remarks = $this->getRemarks($finalGrade);
+                $student->grade_point = number_format($gradePoint, 2);
+                $student->remarks = $this->getRemarks($gradePoint, $passingGrade);
             } else {
                 $student->midterm_grade = 0;
                 $student->finals_grade = 0;
                 $student->final_grade = 0;
-                $student->letter_grade = 'INC';
+                $student->grade_point = '5.00';
                 $student->remarks = 'Incomplete';
             }
             return $student;
@@ -143,94 +159,122 @@ class GradeSheetController extends Controller
         $filename = 'GradeSheet_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
         return $pdf->download($filename);
     }
-    // Helper methods for grade calculation and remarks (copied from Admin controller if needed)
-    private function calculatePeriodGrade($studentId, $periodData, $period)
+    // Helper methods for grade calculation and remarks
+    private function calculatePeriodGrade($gradebook, $period, $studentId)
     {
-        if (!isset($periodData['grades'][$studentId]) || !isset($periodData['tables'])) {
+        if (!isset($gradebook[$period]['tables'])) {
             return 0;
         }
-        $grades = $periodData['grades'][$studentId];
+
+        $periodData = $gradebook[$period];
         $tables = $periodData['tables'];
-        $total = 0;
+        $studentGrades = $periodData['grades'][$studentId] ?? [];
+        $autoGrades = $periodData['autoGrades'][$studentId] ?? [];
         
+        $totalScore = 0;
+
         foreach ($tables as $table) {
-            // Skip summary tables
-            if (!empty($table['isSummary'])) {
+            // Skip summary table
+            if (!empty($table['isSummary']) || (isset($table['id']) && $table['id'] === 'summary')) {
                 continue;
             }
-            
-            $tableWeight = floatval($table['percentage'] ?? 0);
-            if ($tableWeight == 0) {
-                continue;
-            }
-            
-            $tableTotal = 0;
-            $columnWeightSum = 0;
-            
-            // Calculate total column percentage
-            foreach (($table['columns'] ?? []) as $col) {
-                if (!empty($col['subcolumns'])) {
-                    $columnWeightSum += floatval($col['percentage'] ?? 0);
-                }
-            }
-            
-            if ($columnWeightSum > 0) {
-                foreach (($table['columns'] ?? []) as $col) {
-                    if (empty($col['subcolumns'])) {
-                        continue;
-                    }
+
+            $tablePercentage = (float)($table['percentage'] ?? 0);
+            if ($tablePercentage == 0) continue;
+
+            $tableScore = 0;
+
+            if (!empty($table['columns'])) {
+                foreach ($table['columns'] as $column) {
+                    $columnPercentage = (float)($column['percentage'] ?? 0);
+                    if ($columnPercentage == 0) continue;
                     
-                    $colId = $col['id'];
-                    $colWeight = floatval($col['percentage'] ?? 0);
-                    $colScore = 0;
-                    $colMax = 0;
-                    
-                    // Calculate column score and max points
-                    foreach ($col['subcolumns'] as $subcol) {
-                        $subcolId = $subcol['id'];
-                        $gradeKey = $table['id'] . '-' . $colId . '-' . $subcolId;
-                        $maxPoints = floatval($subcol['maxPoints'] ?? 100);
-                        
-                        $colScore += isset($grades[$gradeKey]) ? floatval($grades[$gradeKey]) : 0;
-                        $colMax += $maxPoints;
-                    }
-                    
-                    // Calculate percentage score for this column
-                    if ($colMax > 0) {
-                        $colPercentScore = $colScore / $colMax;
-                        // Normalized column weight
-                        $colNormalizedWeight = $colWeight / $columnWeightSum;
-                        $tableTotal += $colPercentScore * $colNormalizedWeight;
+                    if (!empty($column['subcolumns'])) {
+                        $columnScore = 0;
+                        $columnMaxPoints = 0;
+
+                        foreach ($column['subcolumns'] as $subcolumn) {
+                            $tableId = $table['id'] ?? '';
+                            $columnId = $column['id'] ?? '';
+                            $subcolumnId = $subcolumn['id'] ?? '';
+                            $gradeKey = $tableId . '-' . $columnId . '-' . $subcolumnId;
+                            $maxPoints = (float)($subcolumn['maxPoints'] ?? 100);
+                            
+                            // Check if this is auto-populated (from classwork)
+                            if (!empty($subcolumn['isAutoPopulated'])) {
+                                $score = isset($autoGrades[$gradeKey]) ? (float)$autoGrades[$gradeKey] : 0;
+                            } else {
+                                $score = isset($studentGrades[$gradeKey]) ? (float)$studentGrades[$gradeKey] : 0;
+                            }
+
+                            $columnScore += $score;
+                            $columnMaxPoints += $maxPoints;
+                        }
+
+                        // Calculate column contribution (percentage of column)
+                        if ($columnMaxPoints > 0) {
+                            $columnPercentScore = ($columnScore / $columnMaxPoints) * $columnPercentage;
+                            $tableScore += $columnPercentScore;
+                        }
                     }
                 }
             }
-            
-            // Apply table weight
-            $total += $tableTotal * ($tableWeight / 100) * 100;
+
+            // The tableScore is already a percentage out of tablePercentage
+            // Add it directly to totalScore
+            $totalScore += $tableScore;
         }
+
+        return $totalScore;
+    }
+
+    private function percentToGradePoint($percentage)
+    {
+        // Convert percentage (0-100) to grade point (1.0-5.0)
+        // 97-100% = 1.00, 0% = 5.00
         
-        return round($total, 2);
+        if ($percentage >= 97) return 1.00;
+        if ($percentage >= 94) return 1.25;
+        if ($percentage >= 91) return 1.50;
+        if ($percentage >= 88) return 1.75;
+        if ($percentage >= 85) return 2.00;
+        if ($percentage >= 82) return 2.25;
+        if ($percentage >= 79) return 2.50;
+        if ($percentage >= 76) return 2.75;
+        if ($percentage >= 75) return 3.00;
+        if ($percentage >= 72) return 3.25;
+        if ($percentage >= 69) return 3.50;
+        if ($percentage >= 66) return 3.75;
+        if ($percentage >= 63) return 4.00;
+        if ($percentage >= 60) return 4.25;
+        if ($percentage >= 57) return 4.50;
+        if ($percentage >= 54) return 4.75;
+        
+        return 5.00; // Below 54% is failing
     }
 
-    private function getLetterGrade($finalGrade)
+    private function getRemarks($gradePoint, $passingGrade = 1.75)
     {
-        if ($finalGrade >= 97) return 'A+';
-        if ($finalGrade >= 93) return 'A';
-        if ($finalGrade >= 90) return 'A-';
-        if ($finalGrade >= 87) return 'B+';
-        if ($finalGrade >= 83) return 'B';
-        if ($finalGrade >= 80) return 'B-';
-        if ($finalGrade >= 77) return 'C+';
-        if ($finalGrade >= 73) return 'C';
-        if ($finalGrade >= 70) return 'C-';
-        if ($finalGrade >= 67) return 'D+';
-        if ($finalGrade >= 63) return 'D';
-        if ($finalGrade >= 60) return 'D-';
-        return 'F';
+        // Use dynamic passing grade (1.75 for Masteral, 1.45 for Doctorate)
+        return $gradePoint <= $passingGrade ? 'Passed' : 'Failed';
     }
 
-    private function getRemarks($finalGrade)
+    /**
+     * Determine passing grade based on program type
+     */
+    private function getPassingGrade(Course $course)
     {
-        return $finalGrade >= 75 ? 'Passed' : 'Failed';
+        $programName = strtolower($course->program->name ?? '');
+        // Doctorate programs require 1.45 or better
+        // Check for common doctorate indicators
+        if (str_contains($programName, 'doctor') || 
+            str_contains($programName, 'phd') || 
+            str_contains($programName, 'ph.d') ||
+            str_contains($programName, 'dba') ||
+            str_contains($programName, 'edd')) {
+            return 1.45;
+        }
+        // Default to Masteral passing grade of 1.75
+        return 1.75;
     }
 }

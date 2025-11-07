@@ -239,7 +239,7 @@ class CoursesController extends Controller
 
         $course->delete();
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course deleted successfully.');
     }
 
@@ -257,8 +257,26 @@ class CoursesController extends Controller
             'ip_address' => request()->ip(),
         ]);
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course archived successfully.');
+    }
+
+    public function approve(Course $course)
+    {
+        $course->update(['status' => 'Active']);
+
+        // Log action
+        AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'approve',
+            'description' => 'Admin approved course: ' . $course->title,
+            'model_type' => 'Course',
+            'model_id' => $course->id,
+            'ip_address' => request()->ip(),
+        ]);
+
+        return redirect()->back()
+            ->with('success', 'Course approved successfully.');
     }
 
     public function restore($id)
@@ -276,7 +294,7 @@ class CoursesController extends Controller
             'ip_address' => request()->ip(),
         ]);
 
-        return redirect()->route('admin.courses.index')
+        return redirect()->back()
             ->with('success', 'Course restored successfully.');
     }
 

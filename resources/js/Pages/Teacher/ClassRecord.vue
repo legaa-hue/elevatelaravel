@@ -1,17 +1,32 @@
 <script setup>
-import { ref, computed } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
+import { Head, Link, router } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
+import { useOfflineFiles } from '@/composables/useOfflineFiles';
 
 const props = defineProps({
   myCourses: { type: Array, default: () => [] },
   joinedCourses: { type: Array, default: () => [] },
 });
 
+// Offline composables
+const { isOnline } = useOfflineSync();
+const { cacheCourses, getCachedCourses } = useTeacherOffline();
+const { downloadFile, getCachedFile } = useOfflineFiles();
+
+const localMyCourses = ref([...props.myCourses]);
+const localJoinedCourses = ref([...props.joinedCourses]);
+const isFromCache = ref(false);
+
+// Auto-refresh interval
+let refreshInterval = null;
+
 // Merge and de-dupe courses by id
 const allCourses = computed(() => {
   const map = new Map();
-  [...props.myCourses, ...props.joinedCourses].forEach(c => map.set(c.id, c));
+  [...localMyCourses.value, ...localJoinedCourses.value].forEach(c => map.set(c.id, c));
   return Array.from(map.values());
 });
 
@@ -20,10 +35,27 @@ const showPdfModal = ref(false);
 const selectedCourse = ref(null);
 const pdfUrl = ref('');
 
-const viewGradeSheet = (course) => {
+const viewGradeSheet = async (course) => {
   selectedCourse.value = course;
+  
+  // Try to load from cache if offline
+  if (!isOnline.value) {
+    const cached = await getCachedFile(`grade-sheet-${course.id}.pdf`);
+    if (cached) {
+      pdfUrl.value = URL.createObjectURL(cached);
+      showPdfModal.value = true;
+      return;
+    }
+    alert('⚠️ Grade sheet not available offline. Please connect to internet to view.');
+    return;
+  }
+  
   pdfUrl.value = route('teacher.class-record.grade-sheet.pdf', course.id);
   showPdfModal.value = true;
+  
+  // Download for offline access
+  const url = route('teacher.class-record.grade-sheet.download', course.id);
+  await downloadFile(url, `grade-sheet-${course.id}.pdf`);
 };
 
 const closePdfModal = () => {
@@ -37,6 +69,44 @@ const downloadPdf = () => {
     window.location.href = route('teacher.class-record.grade-sheet.download', selectedCourse.value.id);
   }
 };
+
+onMounted(async () => {
+  // Cache courses when online
+  if (isOnline.value) {
+    const allCoursesList = [...props.myCourses, ...props.joinedCourses];
+    if (allCoursesList.length > 0) {
+      await cacheCourses(allCoursesList);
+      isFromCache.value = false;
+    }
+  } else {
+    // Load from cache when offline
+    const cached = await getCachedCourses();
+    if (cached && cached.length > 0) {
+      localMyCourses.value = cached.filter(c => c.is_owner);
+      localJoinedCourses.value = cached.filter(c => !c.is_owner);
+      isFromCache.value = true;
+    }
+  }
+  
+  // Set up auto-refresh every 10 seconds to check for admin changes
+  refreshInterval = setInterval(() => {
+    // Only refresh if user is online and modal is not open
+    if (isOnline.value && !showPdfModal.value) {
+      router.reload({ 
+        only: ['myCourses', 'joinedCourses'],
+        preserveScroll: true,
+        preserveState: true,
+      });
+    }
+  }, 10000); // Refresh every 10 seconds
+});
+
+onUnmounted(() => {
+  // Clean up the interval when component is destroyed
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+  }
+});
 </script>
 
 <template>
@@ -53,6 +123,19 @@ const downloadPdf = () => {
             <h1 class="text-2xl font-bold">Class Records</h1>
             <p class="text-red-100 text-sm">View grade sheets for all your courses (owned and joined)</p>
           </div>
+        </div>
+      </div>
+
+      <!-- Cache Indicator -->
+      <div 
+        v-if="isFromCache"
+        class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md"
+      >
+        <div class="flex items-center">
+          <svg class="w-6 h-6 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <p class="text-yellow-800 font-medium">📋 Viewing Cached Class Records (Offline Mode)</p>
         </div>
       </div>
 

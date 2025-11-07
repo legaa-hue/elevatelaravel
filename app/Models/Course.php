@@ -2,13 +2,14 @@
 
 namespace App\Models;
 
+use App\Traits\HasVersioning;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 class Course extends Model
 {
-    use HasFactory;
+    use HasFactory, HasVersioning;
 
     protected $fillable = [
         'teacher_id',
@@ -22,6 +23,7 @@ class Course extends Model
         'gradebook',
         'join_code',
         'status',
+        'version',
     ];
 
     protected $casts = [
@@ -29,7 +31,7 @@ class Course extends Model
     ];
 
     protected $attributes = [
-        'status' => 'Pending', // Default status is Pending until admin approves
+        'status' => 'Pending', // Courses require admin approval before becoming active
     ];
 
     protected static function boot()

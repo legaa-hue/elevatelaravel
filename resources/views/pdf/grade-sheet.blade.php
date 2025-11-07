@@ -256,9 +256,10 @@
             <tr>
                 <th>No.</th>
                 <th>Student Name</th>
-                <th>Midterm<br>Grade</th>
-                <th>Finals<br>Grade</th>
-                <th>Final Grade</th>
+                <th>Midterm<br>Grade (%)</th>
+                <th>Finals<br>Grade (%)</th>
+                <th>Final<br>Grade (%)</th>
+                <th>Grade<br>Point</th>
                 <th>Remarks</th>
             </tr>
         </thead>
@@ -269,12 +270,13 @@
                 <td class="name">{{ $student->last_name }}, {{ $student->first_name }}</td>
                 <td class="grade">{{ $student->midterm_grade }}</td>
                 <td class="grade">{{ $student->finals_grade }}</td>
-                <td class="letter-grade">{{ $student->letter_grade }}</td>
+                <td class="final-grade">{{ $student->final_grade }}</td>
+                <td class="letter-grade">{{ $student->grade_point }}</td>
                 <td class="remarks">{{ $student->remarks }}</td>
             </tr>
             @empty
             <tr>
-                <td colspan="6" style="text-align: center; padding: 20px; color: #666;">
+                <td colspan="7" style="text-align: center; padding: 20px; color: #666;">
                     No students enrolled in this course
                 </td>
             </tr>

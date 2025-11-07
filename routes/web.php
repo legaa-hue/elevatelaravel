@@ -5,9 +5,41 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// Serve the Service Worker from a root URL using a small loader that imports the built SW
+Route::get('/service-worker.js', function () {
+    $ts = time();
+    $loader = "// SW loader shim (loads built sw bundle)\n"
+        . "// Note: This runs in the Service Worker global scope\n"
+        . "self.addEventListener('error', function(e){ try { console.error('[sw-loader] error:', e.message, e.filename+':'+e.lineno+':'+e.colno); } catch(_) {} try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: e && (e.message||e.toString()), stack: (e && e.error && (e.error.stack||e.error)) || '' }); }); }); } catch(_) {} });\n"
+        . "self.addEventListener('unhandledrejection', function(e){ try { console.error('[sw-loader] unhandledrejection:', e.reason && (e.reason.stack || e.reason)); } catch(_) {} try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: 'unhandledrejection', stack: e && e.reason && (e.reason.stack || e.reason) }); }); }); } catch(_) {} });\n"
+        . "try {\n"
+        . "  // Signal loader start\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_INFO', message: 'loader-start' }); }); }); } catch(_) {}\n"
+        . "  importScripts('/build/sw.js?v=" . $ts . "');\n"
+        . "  // Signal loader success\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_INFO', message: 'loader-success' }); }); }); } catch(_) {}\n"
+        . "} catch (err) {\n"
+        . "  try { console.error('[sw-loader] importScripts failed:', err && (err.stack || err.message || err)); } catch(_) {}\n"
+        . "  try { self.clients && self.clients.matchAll({includeUncontrolled:true,type:'window'}).then(function(cs){ cs.forEach(function(c){ c.postMessage({ type:'SW_LOADER_ERROR', message: 'importScripts failed', stack: err && (err.stack || err.message || err) }); }); }); } catch(_) {}\n"
+        . "  throw err;\n"
+        . "}\n";
+    return response($loader, 200, [
+        'Content-Type' => 'text/javascript; charset=utf-8',
+        'Service-Worker-Allowed' => '/',
+        'Cache-Control' => 'no-cache, no-store, must-revalidate',
+        'Pragma' => 'no-cache',
+        'Expires' => '0',
+    ]);
+});
+
 Route::get('/', function () {
     return Inertia::render('Landing');
 });
+
+// PWA Status Check Page (for debugging)
+Route::get('/pwa-status', function () {
+    return Inertia::render('PWAStatus');
+})->name('pwa.status');
 
 Route::get('/dashboard', function () {
     $user = auth()->user();
@@ -40,6 +72,13 @@ Route::middleware('auth')->group(function () {
 Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Admin\DashboardController::class, 'index'])->name('dashboard');
     
+    // Notification routes
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/{notification}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    
     // Calendar and Events
     Route::get('/calendar', [\App\Http\Controllers\Admin\EventController::class, 'index'])->name('calendar');
     Route::post('/events', [\App\Http\Controllers\Admin\EventController::class, 'store'])->name('events.store');
@@ -65,10 +104,6 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::post('/courses/{course}/archive', [\App\Http\Controllers\Admin\CoursesController::class, 'archive'])->name('courses.archive');
     Route::post('/courses/{course}/restore', [\App\Http\Controllers\Admin\CoursesController::class, 'restore'])->name('courses.restore');
     
-    // Course Approval (existing)
-    Route::post('/courses/{course}/approve', [CourseApprovalController::class, 'approve']);
-    Route::post('/courses/{course}/reject', [CourseApprovalController::class, 'reject']);
-    
     // User Management
     Route::get('/users', [\App\Http\Controllers\Admin\UserManagementController::class, 'index'])->name('users');
     Route::post('/users', [\App\Http\Controllers\Admin\UserManagementController::class, 'store'])->name('users.store');
@@ -85,10 +120,6 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
     Route::patch('/academic-year/{academicYear}/status', [\App\Http\Controllers\Admin\AcademicYearController::class, 'updateStatus'])->name('academic-year.updateStatus');
     Route::delete('/academic-year/{academicYear}', [\App\Http\Controllers\Admin\AcademicYearController::class, 'destroy'])->name('academic-year.destroy');
     Route::get('/academic-year/{academicYear}/download', [\App\Http\Controllers\Admin\AcademicYearController::class, 'download'])->name('academic-year.download');
-    
-    // Reports
-    Route::get('/reports', [\App\Http\Controllers\Admin\ReportController::class, 'index'])->name('reports');
-    Route::get('/reports/fetch', [\App\Http\Controllers\Admin\ReportController::class, 'fetch'])->name('reports.fetch');
     
     // Programs and Course Templates
     Route::get('/programs', [\App\Http\Controllers\Admin\ProgramController::class, 'index'])->name('programs.index');
@@ -113,6 +144,13 @@ Route::middleware(['auth', 'verified', 'admin'])->prefix('admin')->name('admin.'
 Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('teacher.')->group(function () {
     Route::get('/dashboard', [\App\Http\Controllers\Teacher\DashboardController::class, 'index'])->name('dashboard');
     
+    // Notification routes
+    Route::get('/notifications', [\App\Http\Controllers\NotificationController::class, 'index'])->name('notifications.index');
+    Route::get('/notifications/unread-count', [\App\Http\Controllers\NotificationController::class, 'unreadCount'])->name('notifications.unread-count');
+    Route::post('/notifications/{notification}/read', [\App\Http\Controllers\NotificationController::class, 'markAsRead'])->name('notifications.mark-read');
+    Route::post('/notifications/mark-all-read', [\App\Http\Controllers\NotificationController::class, 'markAllAsRead'])->name('notifications.mark-all-read');
+    Route::delete('/notifications/{notification}', [\App\Http\Controllers\NotificationController::class, 'destroy'])->name('notifications.destroy');
+    
     // Programs and Course Templates for Teachers
     Route::get('/programs/list', [\App\Http\Controllers\Admin\ProgramController::class, 'getPrograms'])->name('programs.list');
     Route::get('/programs/{program}/course-templates', [\App\Http\Controllers\Admin\ProgramController::class, 'getCourseTemplates'])->name('programs.course-templates');
@@ -125,6 +163,10 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::get('/courses/{course}', [\App\Http\Controllers\Teacher\CourseViewController::class, 'show'])->name('courses.show');
     Route::delete('/courses/{course}', [\App\Http\Controllers\Teacher\CourseController::class, 'destroy'])->name('courses.destroy');
     Route::delete('/courses/{course}/leave', [\App\Http\Controllers\Teacher\CourseController::class, 'leave'])->name('courses.leave');
+    
+    // Grade Access Management
+    Route::post('/courses/{course}/students/{student}/grant-grade-access', [\App\Http\Controllers\Teacher\CourseController::class, 'grantGradeAccess'])->name('courses.grant-grade-access');
+    Route::post('/courses/{course}/students/{student}/revoke-grade-access', [\App\Http\Controllers\Teacher\CourseController::class, 'revokeGradeAccess'])->name('courses.revoke-grade-access');
     
     // Classwork Management
     Route::get('/courses/{course}/classwork', [\App\Http\Controllers\Teacher\ClassworkController::class, 'index'])->name('courses.classwork.index');
@@ -140,6 +182,11 @@ Route::middleware(['auth', 'verified', 'teacher'])->prefix('teacher')->name('tea
     Route::post('/courses/{course}/gradebook/save', [\App\Http\Controllers\Teacher\GradebookController::class, 'save'])->name('courses.gradebook.save');
     Route::get('/courses/{course}/gradebook/load', [\App\Http\Controllers\Teacher\GradebookController::class, 'load'])->name('courses.gradebook.load');
     Route::get('/courses/{course}/graded-submissions', [\App\Http\Controllers\Teacher\CourseViewController::class, 'getGradedSubmissions'])->name('courses.graded-submissions');
+    
+    // Export Routes
+    Route::get('/courses/{course}/export-final-grades', [\App\Http\Controllers\Teacher\GradeSheetController::class, 'downloadPdf'])->name('courses.export-final-grades');
+    Route::get('/courses/{course}/export-course-performance', [\App\Http\Controllers\Teacher\ReportController::class, 'exportPerformancePdf'])->name('courses.export-course-performance');
+    Route::get('/courses/{course}/export-class-standings', [\App\Http\Controllers\Teacher\ReportController::class, 'exportStandingsPdf'])->name('courses.export-class-standings');
     
     // Class Record for specific course
     Route::get('/courses/{course}/class-record', [\App\Http\Controllers\Teacher\ClassRecordController::class, 'show'])->name('courses.class-record');
@@ -192,6 +239,9 @@ Route::middleware(['auth', 'verified', 'student'])->prefix('student')->name('stu
     Route::get('/courses/{id}', [\App\Http\Controllers\Student\CourseController::class, 'show'])->name('courses.show');
     Route::post('/classwork/{classwork}/submit', [\App\Http\Controllers\Student\CourseController::class, 'submitClasswork'])->name('classwork.submit');
     Route::delete('/classwork/{classwork}/unsubmit', [\App\Http\Controllers\Student\CourseController::class, 'unsubmitClasswork'])->name('classwork.unsubmit');
+    
+    // Grade Access Request
+    Route::post('/courses/{course}/request-grade-access', [\App\Http\Controllers\Student\CourseController::class, 'requestGradeAccess'])->name('courses.request-grade-access');
     
     // Calendar
     Route::get('/calendar', [\App\Http\Controllers\Student\CalendarController::class, 'index'])->name('calendar');

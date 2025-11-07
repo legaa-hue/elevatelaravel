@@ -41,6 +41,7 @@ class CourseController extends Controller
         $validated['teacher_id'] = auth()->id();
         $validated['title'] = $courseTemplate->course_name;
         $validated['units'] = $courseTemplate->units;
+        $validated['status'] = 'Pending'; // Requires admin approval
 
         $course = Course::create($validated);
 
@@ -54,7 +55,7 @@ class CourseController extends Controller
             'ip_address' => $request->ip(),
         ]);
 
-        return redirect()->back()->with('success', 'Course created successfully!');
+        return redirect()->back()->with('success', 'Course created successfully! Waiting for admin approval.');
     }
 
     public function join(Request $request)
@@ -229,4 +230,66 @@ class CourseController extends Controller
 
         return redirect()->back()->with('success', 'Successfully left the course!');
     }
+
+    public function grantGradeAccess(Request $request, $courseId, $studentId)
+    {
+        $course = Course::findOrFail($courseId);
+        
+        // Verify teacher owns or is assigned to this course
+        if ($course->teacher_id !== auth()->id()) {
+            $isAssignedTeacher = JoinedCourse::where('course_id', $courseId)
+                ->where('user_id', auth()->id())
+                ->where('role', 'Teacher')
+                ->exists();
+            
+            if (!$isAssignedTeacher) {
+                return back()->withErrors(['error' => 'Unauthorized access.']);
+            }
+        }
+
+        // Find student's joined course record
+        $joinedCourse = JoinedCourse::where('course_id', $courseId)
+            ->where('user_id', $studentId)
+            ->where('role', 'Student')
+            ->firstOrFail();
+
+        // Grant access
+        $joinedCourse->update([
+            'grade_access_granted' => true,
+            'grade_access_requested' => false,
+        ]);
+
+        return back()->with('success', 'Grade access granted successfully.');
+    }
+
+    public function revokeGradeAccess(Request $request, $courseId, $studentId)
+    {
+        $course = Course::findOrFail($courseId);
+        
+        // Verify teacher owns or is assigned to this course
+        if ($course->teacher_id !== auth()->id()) {
+            $isAssignedTeacher = JoinedCourse::where('course_id', $courseId)
+                ->where('user_id', auth()->id())
+                ->where('role', 'Teacher')
+                ->exists();
+            
+            if (!$isAssignedTeacher) {
+                return back()->withErrors(['error' => 'Unauthorized access.']);
+            }
+        }
+
+        // Find student's joined course record
+        $joinedCourse = JoinedCourse::where('course_id', $courseId)
+            ->where('user_id', $studentId)
+            ->where('role', 'Student')
+            ->firstOrFail();
+
+        // Revoke access
+        $joinedCourse->update([
+            'grade_access_granted' => false,
+        ]);
+
+        return back()->with('success', 'Grade access revoked successfully.');
+    }
 }
+

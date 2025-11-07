@@ -12,6 +12,7 @@ use App\Models\QuizQuestion;
 use App\Services\NotificationService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
@@ -53,6 +54,18 @@ class ClassworkController extends Controller
             abort(403, 'Unauthorized access to this course');
         }
 
+        // Idempotency guard: if the same client_token posts again within a short window, ignore duplicates
+        $clientToken = $request->input('client_token');
+        if ($clientToken) {
+            $idempKey = 'cw_idemp:' . $user->id . ':' . $clientToken;
+            // Cache::add returns false if the key already exists
+            if (!Cache::add($idempKey, true, now()->addMinutes(5))) {
+                // Duplicate submit detected; return a normal redirect without creating a new record
+                return redirect()->route('teacher.courses.show', $course->id)
+                    ->with('info', 'Duplicate request ignored');
+            }
+        }
+
         // Log incoming request data for debugging
         logger()->info('Classwork creation request', [
             'type' => $request->input('type'),
@@ -90,6 +103,7 @@ class ClassworkController extends Controller
             'quiz_questions.*.correct_answer' => 'nullable|string',
             'quiz_questions.*.correct_answers' => 'nullable|array',
             'quiz_questions.*.points' => 'required_with:quiz_questions|integer|min:0',
+            'client_token' => 'nullable|string|max:128',
         ]);
 
         // Handle file uploads

@@ -1,8 +1,10 @@
                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     <script setup>
-import { ref, computed, watch } from 'vue';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import GradebookContent from '@/Components/GradebookContent.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    import { useOfflineFiles } from '@/composables/useOfflineFiles';
 
 const props = defineProps({
     course: Object,
@@ -12,9 +14,32 @@ const props = defineProps({
     announcements: Array,
 });
 
-// Debug: Check students prop
+// Debug: Check students prop and program data
 console.log('CourseView - Students prop:', props.students);
 console.log('CourseView - Students count:', props.students?.length);
+console.log('CourseView - Course students:', props.course.students);
+console.log('CourseView - First course student:', props.course.students?.[0]);
+console.log('CourseView - Course program:', props.course.program);
+console.log('CourseView - Course object:', props.course);
+
+// Create a reactive ref for gradebook that can be updated
+const gradebook = ref(props.course.gradebook || {
+    midtermPercentage: 50,
+    finalsPercentage: 50,
+    midterm: { tables: [], grades: {}, periodGrades: {} },
+    finals: { tables: [], grades: {}, periodGrades: {} }
+});
+
+// Sync local gradebook with server-provided course.gradebook when it changes (e.g., after creating gradebook subcolumns)
+watch(
+    () => props.course?.gradebook,
+    (newVal) => {
+        if (newVal && typeof newVal === 'object') {
+            gradebook.value = newVal;
+        }
+    },
+    { deep: true }
+);
 
 // Restore active tab from sessionStorage or default to 'classwork'
 const activeTab = ref(sessionStorage.getItem(`courseTab_${props.course.id}`) || 'classwork');
@@ -63,8 +88,12 @@ const tabs = [
     { id: 'class-record', name: 'Class Record' },
 ];
 
+// Offline sync utilities
+const { saveOfflineAction, updatePendingCount, savePendingFiles } = useOfflineSync();
+const { downloadFiles, downloadClassworkAttachments, isFileCached } = useOfflineFiles();
+
 // Watch activeTab and save to sessionStorage
-watch(activeTab, (newTab) => {
+watch(activeTab, (newTab, oldTab) => {
     sessionStorage.setItem(`courseTab_${props.course.id}`, newTab);
 });
 
@@ -87,7 +116,14 @@ const questionTypes = [
 ];
 
 // Computed properties
+const gradeAccessRequests = computed(() => {
+    return props.course.students?.filter(student => 
+        student.grade_access_requested && !student.grade_access_granted
+    ) || [];
+});
+
 const todoItems = computed(() => {
+    // Use full classwork list for Classroom (includes lessons/materials)
     return props.classwork?.filter(item => item.is_todo) || [];
 });
 
@@ -161,45 +197,73 @@ const availableGradingPeriods = computed(() => {
 const availableGradeTables = computed(() => {
     if (!classworkForm.grading_period) return [];
     
-    // If gradebook doesn't exist yet, return default tables
-    if (!props.course?.gradebook) {
-        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
-        return [
-            { value: 'Asynchronous', label: 'Asynchronous' },
-            { value: 'Synchronous', label: 'Synchronous' },
-            { value: examName, label: examName }
-            // Note: Summary table is excluded as it's read-only
-        ];
+    // Always start with default tables
+    const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
+    const defaultTables = [
+        { value: 'Asynchronous', label: 'Asynchronous' },
+        { value: 'Synchronous', label: 'Synchronous' },
+        { value: examName, label: examName }
+    ];
+    
+    // Check both the reactive gradebook ref and the props
+    const gradebookData = gradebook.value || props.course?.gradebook;
+    
+    // If gradebook doesn't exist yet, return default tables only
+    if (!gradebookData) {
+        return defaultTables;
     }
     
-    const periodData = props.course.gradebook[classworkForm.grading_period];
+    const periodData = gradebookData[classworkForm.grading_period];
     if (!periodData || !periodData.tables) {
-        // Fallback to default tables if period data doesn't exist
-        const examName = classworkForm.grading_period === 'midterm' ? 'Midterm Examination' : 'Final Examination';
-        return [
-            { value: 'Asynchronous', label: 'Asynchronous' },
-            { value: 'Synchronous', label: 'Synchronous' },
-            { value: examName, label: examName }
-        ];
+        return defaultTables;
     }
     
-    return periodData.tables
-        .filter(table => !table.isSummary) // Filter out Summary table
+    // Get custom tables (exclude Summary table)
+    const customTables = periodData.tables
+        .filter(table => !table.isSummary && !['Asynchronous', 'Synchronous', examName].includes(table.name))
         .map(table => ({
             value: table.name,
             label: table.name
         }));
+    
+    // Combine default tables with custom tables
+    return [...defaultTables, ...customTables];
 });
 
 // Get available main columns for selected grade table
 const availableMainColumns = computed(() => {
-    if (!classworkForm.grading_period || !classworkForm.grade_table_name || !props.course?.gradebook) return [];
-    const periodData = props.course.gradebook[classworkForm.grading_period];
-    if (!periodData || !periodData.tables) return [];
+    if (!classworkForm.grading_period || !classworkForm.grade_table_name) return [];
     
+    // Check both the reactive gradebook ref and the props
+    const gradebookData = gradebook.value || props.course?.gradebook;
+    
+    // If no gradebook data exists, return empty (user needs to create columns in gradebook first)
+    if (!gradebookData) {
+        console.log('No gradebook data available');
+        return [];
+    }
+    
+    const periodData = gradebookData[classworkForm.grading_period];
+    if (!periodData || !periodData.tables) {
+        console.log('No period data or tables');
+        return [];
+    }
+    
+    // Find the selected table in the gradebook
     const table = periodData.tables.find(t => t.name === classworkForm.grade_table_name);
-    if (!table || !table.columns) return [];
     
+    if (!table) {
+        console.log('Table not found:', classworkForm.grade_table_name);
+        console.log('Available tables:', periodData.tables.map(t => t.name));
+        return [];
+    }
+    
+    if (!table.columns || table.columns.length === 0) {
+        console.log('No columns in table:', classworkForm.grade_table_name);
+        return [];
+    }
+    
+    console.log('Found columns for table:', classworkForm.grade_table_name, table.columns);
     return table.columns.map(col => ({
         value: col.name,
         label: col.name
@@ -241,6 +305,20 @@ watch(() => classworkForm.title, (newTitle) => {
     }
 });
 
+// Watch gradebook fields to debug selection
+watch(() => classworkForm.grading_period, (val) => {
+    console.log('🎯 Grading Period changed:', val);
+});
+watch(() => classworkForm.grade_table_name, (val) => {
+    console.log('📊 Grade Table changed:', val);
+});
+watch(() => classworkForm.grade_main_column, (val) => {
+    console.log('📋 Main Column changed:', val);
+});
+watch(() => classworkForm.grade_sub_column, (val) => {
+    console.log('📝 Sub Column changed:', val);
+});
+
 // Watch for question type changes to initialize correct data structures
 watch(() => quizQuestions.value.map(q => q.type), (newTypes, oldTypes) => {
     quizQuestions.value.forEach((question, index) => {
@@ -262,6 +340,40 @@ const openClassworkModal = () => {
     existingAttachments.value = [];
     addRubricCriteria(); // Start with one criteria by default
     showClassworkModal.value = true;
+};
+
+const grantAccess = (studentId) => {
+    router.post(route('teacher.courses.grant-grade-access', { course: props.course.id, student: studentId }), {}, {
+        preserveScroll: true,
+        onSuccess: () => {
+            // Reload the page data to show updated student data
+            router.reload({ only: ['students'] });
+        }
+    });
+};
+
+const revokeAccess = (studentId) => {
+    if (confirm('Are you sure you want to hide grades from this student?')) {
+        router.post(route('teacher.courses.revoke-grade-access', { course: props.course.id, student: studentId }), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to show updated student data
+                router.reload({ only: ['students'] });
+            }
+        });
+    }
+};
+
+const denyRequest = (studentId) => {
+    if (confirm('Are you sure you want to deny this grade access request?')) {
+        router.post(route('teacher.courses.revoke-grade-access', { course: props.course.id, student: studentId }), {}, {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to show updated student data
+                router.reload({ only: ['students'] });
+            }
+        });
+    }
 };
 
 const openEditModal = (classwork) => {
@@ -292,6 +404,11 @@ const openEditModal = (classwork) => {
     existingAttachments.value = classwork.attachments || [];
     fileAttachments.value = []; // Clear new file uploads
     showClassworkModal.value = true;
+
+    // Prefetch attachments for this classwork so teacher can view offline immediately
+    if (classwork.attachments && classwork.attachments.length > 0 && navigator.onLine) {
+        try { downloadClassworkAttachments(classwork); } catch (e) { console.warn('Teacher prefetch failed:', e); }
+    }
 };
 
 const confirmDelete = (classwork) => {
@@ -310,6 +427,8 @@ const deleteClasswork = () => {
         onSuccess: () => {
             showDeleteConfirm.value = false;
             classworkToDelete.value = null;
+            // Reload the page data to remove deleted classwork and update progress
+            router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
         },
     });
 };
@@ -420,7 +539,7 @@ const removeFile = (index) => {
     fileAttachments.value.splice(index, 1);
 };
 
-const submitClasswork = () => {
+const submitClasswork = async () => {
     // Set has_submission to false for lessons
     if (classworkForm.type === 'lesson') {
         classworkForm.has_submission = false;
@@ -451,6 +570,10 @@ const submitClasswork = () => {
         existing_attachments_count: existingAttachments.value.length,
         rubric_criteria_count: classworkForm.rubric_criteria.length,
         quiz_questions_count: classworkForm.quiz_questions.length,
+        grading_period: classworkForm.grading_period,
+        grade_table_name: classworkForm.grade_table_name,
+        grade_main_column: classworkForm.grade_main_column,
+        grade_sub_column: classworkForm.grade_sub_column,
     });
 
     if (editingClasswork.value) {
@@ -470,16 +593,26 @@ const submitClasswork = () => {
         }
         
         // Update existing classwork
+        // Validate we have a classwork id for the update route
+        const classworkId = editingClasswork.value?.id;
+        if (!classworkId) {
+            console.error('Edit attempted without a valid classwork id:', editingClasswork.value);
+            alert('Could not update: missing classwork ID. Please close the modal and try editing again.');
+            return;
+        }
+
         // Use POST with _method=PUT for file uploads (Laravel requirement)
         classworkForm.transform(() => updateData).post(route('teacher.courses.classwork.update', {
             course: props.course.id,
-            classwork: editingClasswork.value.id
+            classwork: classworkId
         }), {
             preserveScroll: true,
             forceFormData: fileAttachments.value.length > 0, // Only force FormData if uploading files
             onSuccess: () => {
                 closeClassworkModal();
                 alert('Classwork updated successfully!');
+                // Reload the page data to show updated classwork and progress
+                router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
             },
             onError: (errors) => {
                 console.error('Failed to update classwork:', errors);
@@ -495,11 +628,50 @@ const submitClasswork = () => {
             }
         });
     } else {
-        // When creating: send all new file uploads
+        // When creating: if offline, queue for later sync; if online, post immediately
+        const isOnline = navigator.onLine;
+        if (!isOnline) {
+            // Build a plain JSON payload (no File objects) for offline queue
+            const payload = {
+                course_id: props.course.id,
+                type: classworkForm.type,
+                title: classworkForm.title,
+                description: classworkForm.description,
+                due_date: classworkForm.due_date,
+                points: classworkForm.points,
+                has_submission: classworkForm.has_submission,
+                status: classworkForm.status,
+                rubric_criteria: classworkForm.rubric_criteria,
+                quiz_questions: classworkForm.quiz_questions,
+                show_correct_answers: classworkForm.show_correct_answers,
+                grading_period: classworkForm.grading_period,
+                grade_table_name: classworkForm.grade_table_name,
+                grade_main_column: classworkForm.grade_main_column,
+                grade_sub_column: classworkForm.grade_sub_column,
+                // attachments will be saved separately in PendingUploadsDB
+            };
+
+            try {
+                const res = await saveOfflineAction('create_classwork', payload);
+                // Persist file blobs for this pending action so we can upload later
+                if (fileAttachments.value && fileAttachments.value.length > 0 && res?.id) {
+                    await savePendingFiles(res.id, fileAttachments.value);
+                }
+                closeClassworkModal();
+                alert('Material saved offline. It will sync automatically when you are online.');
+                await updatePendingCount();
+                return;
+            } catch (err) {
+                console.error('Failed to save classwork offline:', err);
+                alert('Failed to save offline. Please try again.');
+                return;
+            }
+        }
+
+        // Online: send all new file uploads now
+        // Add a one-time idempotency token to prevent double-create on double-click
         classworkForm.attachments = fileAttachments.value;
-        
-        // Create new classwork
-        // When posting with files, Inertia automatically converts to FormData
+
         classworkForm.post(route('teacher.courses.classwork.store', props.course.id), {
             preserveScroll: true,
             forceFormData: true, // Force FormData for file uploads
@@ -507,14 +679,25 @@ const submitClasswork = () => {
                 const typeName = classworkForm.type.charAt(0).toUpperCase() + classworkForm.type.slice(1);
                 closeClassworkModal();
                 alert(`${typeName} created successfully!`);
+                // If this material is linked to the gradebook, switch to the Gradebook tab for immediate visibility
+                if (classworkForm.grading_period && classworkForm.grade_table_name && classworkForm.grade_main_column) {
+                    activeTab.value = 'gradebook';
+                }
+                router.reload({ only: ['course', 'classwork', 'classworks', 'students'] });
+                // After reload completes, a global event may be fired; also proactively prefetch current props soon
+                setTimeout(() => prefetchAllCourseAttachments(), 500);
             },
             onError: (errors) => {
                 console.error('Failed to create classwork:', errors);
-                // Show error message to user
-                let errorMessage = 'Failed to create classwork:\n';
+                console.error('Full error object:', JSON.stringify(errors, null, 2));
+                let errorMessage = 'Failed to create classwork:\n\n';
                 if (typeof errors === 'object') {
                     Object.keys(errors).forEach(key => {
-                        errorMessage += `${key}: ${errors[key]}\n`;
+                        if (Array.isArray(errors[key])) {
+                            errorMessage += `${key}: ${errors[key].join(', ')}\n`;
+                        } else {
+                            errorMessage += `${key}: ${errors[key]}\n`;
+                        }
                     });
                 } else {
                     errorMessage += errors;
@@ -699,10 +882,10 @@ const isOfficeDocument = (filename) => {
 };
 
 const getOfficeViewerUrl = (fileUrl) => {
-    // Use Microsoft Office Online Viewer for better compatibility
+    // Use Google Docs Viewer as it works better with local files
     // Need to convert relative URL to absolute URL
     const absoluteUrl = fileUrl.startsWith('http') ? fileUrl : window.location.origin + fileUrl;
-    return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(absoluteUrl)}`;
+    return `https://docs.google.com/gview?url=${encodeURIComponent(absoluteUrl)}&embedded=true`;
 };
 
 // Class Record Helper Functions
@@ -823,33 +1006,40 @@ const isDoctorate = computed({
 });
 
 // Class Record Grade Calculation Functions
-// Use the computed period grade from the gradebook summary (Midterm Period Grades)
+// Use the reactive gradebook ref so changes are reflected immediately
 const getMidtermGrade = (studentId) => {
-    // Always use the same value as shown in the Gradebook tab: gradebook.midterm.summary[studentId] if available, else 0
-    const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.midterm) return 0;
-    // Use summary table value if available (Gradebook tab uses this)
-    if (gradebook.midterm.summary && gradebook.midterm.summary[studentId] !== undefined && gradebook.midterm.summary[studentId] !== null) {
-        return parseFloat(gradebook.midterm.summary[studentId]);
+    console.log('[ClassRecord] getMidtermGrade for student', studentId, 'gradebook:', gradebook.value);
+    
+    if (!gradebook.value || !gradebook.value.midterm) {
+        console.log('[ClassRecord] No gradebook or midterm data');
+        return 0;
     }
-    // Fallback: use periodGrades if available
-    if (gradebook.midterm.periodGrades && gradebook.midterm.periodGrades[studentId] !== undefined && gradebook.midterm.periodGrades[studentId] !== null) {
-        return parseFloat(gradebook.midterm.periodGrades[studentId]);
+    
+    // Use periodGrades (saved from GradebookContent)
+    if (gradebook.value.midterm.periodGrades && gradebook.value.midterm.periodGrades[studentId] !== undefined && gradebook.value.midterm.periodGrades[studentId] !== null) {
+        console.log('[ClassRecord] Found midterm periodGrades for student', studentId, ':', gradebook.value.midterm.periodGrades[studentId]);
+        return parseFloat(gradebook.value.midterm.periodGrades[studentId]);
     }
+    
+    console.log('[ClassRecord] No periodGrades found for student', studentId);
     return 0;
 };
 
 const getFinalsGrade = (studentId) => {
-    // Always use the same value as shown in the Gradebook tab: gradebook.finals.summary[studentId] if available, else 0
-    const gradebook = props.course.gradebook;
-    if (!gradebook || !gradebook.finals) return 0;
-    if (gradebook.finals.summary && gradebook.finals.summary[studentId] !== undefined && gradebook.finals.summary[studentId] !== null) {
-        return parseFloat(gradebook.finals.summary[studentId]);
+    console.log('[ClassRecord] getFinalsGrade for student', studentId, 'gradebook:', gradebook.value);
+    
+    if (!gradebook.value || !gradebook.value.finals) {
+        console.log('[ClassRecord] No gradebook or finals data');
+        return 0;
     }
-    // Fallback: use periodGrades if available
-    if (gradebook.finals.periodGrades && gradebook.finals.periodGrades[studentId] !== undefined && gradebook.finals.periodGrades[studentId] !== null) {
-        return parseFloat(gradebook.finals.periodGrades[studentId]);
+    
+    // Use periodGrades (saved from GradebookContent)
+    if (gradebook.value.finals.periodGrades && gradebook.value.finals.periodGrades[studentId] !== undefined && gradebook.value.finals.periodGrades[studentId] !== null) {
+        console.log('[ClassRecord] Found finals periodGrades for student', studentId, ':', gradebook.value.finals.periodGrades[studentId]);
+        return parseFloat(gradebook.value.finals.periodGrades[studentId]);
     }
+    
+    console.log('[ClassRecord] No periodGrades found for student', studentId);
     return 0;
 };
 
@@ -861,6 +1051,77 @@ const getFinalGrade = (studentId) => {
     const midtermPercentage = gradebook?.midtermPercentage || 50;
     const finalsPercentage = gradebook?.finalsPercentage || 50;
     return (midterm * (midtermPercentage / 100)) + (finals * (finalsPercentage / 100));
+};
+
+// Convert percentage grade to Philippine grading scale (1.0 - 5.0)
+const convertToGradingScale = (percentGrade) => {
+    if (!percentGrade || percentGrade === 0 || percentGrade === '-') return '-';
+    
+    const grade = parseFloat(percentGrade);
+    
+    // Philippine Grading Scale based on the provided table
+    if (grade >= 100) return 1.0;
+    if (grade >= 99) return 1.15;
+    if (grade >= 98) return 1.2;
+    if (grade >= 97) return 1.25;
+    if (grade >= 96) return 1.3;
+    if (grade >= 95) return 1.35;
+    if (grade >= 94) return 1.4;
+    if (grade >= 93) return 1.45;
+    if (grade >= 92) return 1.5;
+    if (grade >= 91) return 1.55;
+    if (grade >= 90) return 1.6;
+    if (grade >= 89) return 1.65;
+    if (grade >= 88) return 1.7;
+    if (grade >= 87) return 1.75;
+    if (grade >= 86) return 1.8;
+    if (grade >= 85) return 1.85;
+    if (grade >= 84) return 1.9;
+    if (grade >= 83) return 1.95;
+    if (grade >= 82) return 2.0;
+    if (grade >= 81) return 2.05;
+    if (grade >= 80) return 2.1;
+    if (grade >= 79) return 2.15;
+    if (grade >= 78) return 2.2;
+    if (grade >= 77) return 2.25;
+    if (grade >= 76) return 2.3;
+    if (grade >= 75) return 2.35;
+    if (grade >= 74) return 2.4;
+    if (grade >= 73) return 2.45;
+    if (grade >= 72) return 2.5;
+    if (grade >= 71) return 2.55;
+    if (grade >= 70) return 2.6;
+    if (grade >= 69) return 2.65;
+    if (grade >= 68) return 2.7;
+    if (grade >= 67) return 2.75;
+    if (grade >= 66) return 2.8;
+    if (grade >= 65) return 2.85;
+    if (grade >= 64) return 2.9;
+    if (grade >= 63) return 2.95;
+    if (grade >= 62) return 3.0;
+    
+    // Below 62% = 5.0 (Failed)
+    return 5.0;
+};
+
+// Get the final converted grade (average of midterm and finals in 1.0-5.0 scale)
+const getFinalConvertedGrade = (studentId) => {
+    const midtermConverted = convertToGradingScale(getMidtermGrade(studentId));
+    const finalsConverted = convertToGradingScale(getFinalsGrade(studentId));
+    
+    // If either grade is missing, return '-'
+    if (midtermConverted === '-' || finalsConverted === '-') {
+        if (midtermConverted !== '-') return midtermConverted;
+        if (finalsConverted !== '-') return finalsConverted;
+        return '-';
+    }
+    
+    // Get percentages from gradebook or use default 50/50
+    const gradebook = props.course.gradebook;
+    const midtermPercentage = gradebook?.midtermPercentage || 50;
+    const finalsPercentage = gradebook?.finalsPercentage || 50;
+    
+    return (midtermConverted * (midtermPercentage / 100)) + (finalsConverted * (finalsPercentage / 100));
 };
 
 const getClassRecordRemark = (finalGrade) => {
@@ -893,18 +1154,56 @@ const exportCoursePerformance = () => {
 const exportClassStandings = () => {
     window.open(route('teacher.courses.export-class-standings', props.course.id), '_blank');
 };
+
+// ===== Offline prefetch of attachments for the whole course =====
+const prefetchAllCourseAttachments = async () => {
+    try {
+        if (!navigator.onLine) return;
+        const urls = [];
+    (props.classwork || []).forEach(cw => {
+            (cw.attachments || []).forEach(att => {
+                if (att?.path) urls.push(`/storage/${att.path}`);
+                else if (att?.url) urls.push(att.url);
+            });
+        });
+        const unique = Array.from(new Set(urls));
+        if (unique.length === 0) return;
+        const checks = await Promise.all(unique.map(u => isFileCached(u)));
+        const toDownload = unique.filter((u, i) => !checks[i]);
+        if (toDownload.length > 0) {
+            await downloadFiles(toDownload, props.course?.id || null);
+        }
+    } catch (e) {
+        console.warn('Prefetch course attachments (teacher) failed:', e);
+    }
+};
+
+const onClassworksUpdated = () => prefetchAllCourseAttachments();
+
+onMounted(() => {
+    window.addEventListener('app:classworks-updated', onClassworksUpdated);
+    prefetchAllCourseAttachments();
+});
+
+onBeforeUnmount(() => {
+    window.removeEventListener('app:classworks-updated', onClassworksUpdated);
+});
+
+watch(() => props.classwork, () => {
+    prefetchAllCourseAttachments();
+});
 </script>
 
 <template>
     <Head :title="`${course.title} - ${course.section}`" />
 
     <TeacherLayout>
-        <div class="space-y-6">
+        <div class="space-y-6 overflow-x-hidden">
             <!-- Course Header -->
             <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-lg shadow-lg p-6 md:p-8 text-white">
                 <div class="flex justify-between items-start">
                     <div>
-                        <h1 class="text-2xl md:text-3xl font-bold">Course: {{ course.title }} - {{ course.section }}</h1>
+                        <h1 class="text-2xl md:text-3xl font-bold break-words">Course: {{ course.title }} - {{ course.section }}</h1>
                         <div class="mt-2 flex flex-wrap items-center gap-4 text-sm text-blue-100">
                             <span>Section: {{ course.section }}</span>
                             <span>•</span>
@@ -944,43 +1243,51 @@ const exportClassStandings = () => {
                 <div class="p-6">
                     <!-- Classwork Tab -->
                     <div v-if="activeTab === 'classwork'">
-                        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                            <!-- Midterm Period Grades Table -->
-                            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
-                                <h2 class="text-lg font-bold text-gray-900 mb-4">Midterm Period Grades</h2>
-                                <table class="w-full border-collapse">
-                                    <thead>
-                                        <tr class="bg-gray-100">
-                                            <th class="px-6 py-3 text-left font-bold border-b">Student Name</th>
-                                            <th class="px-6 py-3 text-center font-bold border-b">Midterm Grade</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr v-for="student in students" :key="student.id" class="hover:bg-gray-50">
-                                            <td class="px-6 py-3 border-b">{{ student.name }}</td>
-                                            <td class="px-6 py-3 border-b text-center font-semibold">{{ getMidtermGrade(student.id).toFixed(2) }}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                            <!-- Left Side: Latest Materials (2/3 width) -->
-                            <div class="lg:col-span-2">
-                                <div class="bg-white rounded-lg shadow-md p-6">
-                                    <div class="flex justify-between items-center mb-6">
-                                        <h2 class="text-xl font-bold text-gray-900">Latest Materials</h2>
-                                        <select 
-                                            v-model="materialFilter"
-                                            class="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 text-sm"
-                                        >
-                                            <option value="all">All</option>
-                                            <option value="materials">Materials</option>
-                                            <option value="tasks">Tasks</option>
-                                            <option value="quizzes">Quizzes</option>
-                                            <option value="activities">Activities</option>
-                                            <option value="essays">Essays</option>
-                                            <option value="projects">Projects</option>
-                                        </select>
+                        <!-- Latest Materials Section (Full width) -->
+                        <div class="bg-white rounded-lg shadow-lg overflow-hidden">
+                            <!-- Header with Create Button and Filter -->
+                            <div class="bg-gradient-to-r from-red-900 to-red-800 px-4 sm:px-6 py-4">
+                                <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div>
+                                        <h2 class="text-2xl font-bold text-white">Course Materials</h2>
+                                        <p class="text-red-100 text-sm mt-1">Manage assignments, quizzes, and course content</p>
                                     </div>
+                                    <button 
+                                        @click="openClassworkModal"
+                                        class="w-full sm:w-auto flex items-center justify-center gap-2 px-5 py-3 bg-white text-red-900 rounded-lg hover:bg-gray-50 transition font-semibold shadow-lg transform hover:scale-105"
+                                    >
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
+                                        </svg>
+                                        Create Material
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Filter Bar -->
+                            <div class="bg-gray-50 px-4 sm:px-6 py-3 border-b border-gray-200">
+                                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                                    <span class="text-sm font-medium text-gray-700">Filter by:</span>
+                                    <select 
+                                        v-model="materialFilter"
+                                        class="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-900 focus:border-red-900 text-sm bg-white"
+                                    >
+                                        <option value="all">All Materials</option>
+                                        <option value="materials">📚 Materials</option>
+                                        <option value="tasks">📝 Tasks</option>
+                                        <option value="quizzes">❓ Quizzes</option>
+                                        <option value="activities">🎯 Activities</option>
+                                        <option value="essays">📄 Essays</option>
+                                        <option value="projects">🚀 Projects</option>
+                                    </select>
+                                    <div class="sm:ml-auto text-sm text-gray-600">
+                                        <span class="font-semibold">{{ filteredMaterials.length + filteredAnnouncements.length }}</span> items
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Materials Content -->
+                            <div class="p-6">
 
                                     <!-- Materials List -->
                                     <div v-if="filteredMaterials.length === 0 && filteredAnnouncements.length === 0" class="text-center py-12 text-gray-500">
@@ -1005,7 +1312,7 @@ const exportClassStandings = () => {
                                                         <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
                                                         </svg>
-                                                        <h3 class="font-semibold text-gray-900">{{ announcement.title }}</h3>
+                                                        <h3 class="font-semibold text-gray-900 break-words">{{ announcement.title }}</h3>
                                                         <span class="px-2 py-0.5 text-xs font-medium rounded uppercase bg-blue-100 text-blue-800">
                                                             Announcement
                                                         </span>
@@ -1013,7 +1320,7 @@ const exportClassStandings = () => {
                                                             All Courses
                                                         </span>
                                                     </div>
-                                                    <p v-if="announcement.description" class="text-sm text-gray-600 mt-2">{{ announcement.description }}</p>
+                                                    <p v-if="announcement.description" class="text-sm text-gray-600 mt-2 break-words">{{ announcement.description }}</p>
                                                     <div class="flex items-center gap-4 mt-3 text-xs text-gray-500">
                                                         <span class="flex items-center gap-1">
                                                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1045,15 +1352,15 @@ const exportClassStandings = () => {
                                             class="bg-white rounded-lg p-4 border-l-4 shadow hover:shadow-md transition"
                                             :style="{ borderLeftColor: item.color_code || getTypeColor(item.type) }"
                                         >
-                                            <div class="flex items-start justify-between">
+                                            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                                                 <div class="flex-1">
                                                     <div class="flex items-center gap-2">
-                                                        <h3 class="font-semibold text-gray-900">{{ item.title }}</h3>
+                                                        <h3 class="font-semibold text-gray-900 break-words">{{ item.title }}</h3>
                                                         <span class="px-2 py-0.5 text-xs font-medium rounded uppercase" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
                                                             {{ item.type }}
                                                         </span>
                                                     </div>
-                                                    <p v-if="item.description" class="text-sm text-gray-600 mt-1">{{ item.description }}</p>
+                                                    <p v-if="item.description" class="text-sm text-gray-600 mt-1 break-words">{{ item.description }}</p>
                                                     <p v-if="item.due_date_formatted" class="text-sm text-gray-600 mt-1">
                                                         Due: {{ item.due_date_formatted }}
                                                     </p>
@@ -1065,7 +1372,7 @@ const exportClassStandings = () => {
                                                         <span class="px-3 py-1 bg-green-500 text-white text-xs rounded-lg">{{ item.graded_count }} graded</span>
                                                     </div>
                                                 </div>
-                                                <div class="flex gap-2">
+                                                <div class="w-full sm:w-auto flex gap-2 mt-3 sm:mt-0 sm:self-start justify-end sm:justify-normal">
                                                     <button 
                                                         @click="viewClasswork(item)" 
                                                         class="p-2 hover:bg-gray-100 rounded" 
@@ -1098,75 +1405,51 @@ const exportClassStandings = () => {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
                             </div>
-
-                            <!-- Right Side: To Do List (1/3 width) -->
-                            <div class="lg:col-span-1">
-                                <div class="bg-white rounded-lg shadow-md p-6 sticky top-6">
-                                    <div class="flex justify-between items-center mb-4">
-                                        <h2 class="text-xl font-bold text-gray-900">To Do</h2>
-                                        <button 
-                                            @click="openClassworkModal"
-                                            class="flex items-center gap-2 px-4 py-2 bg-red-900 text-white rounded-lg hover:bg-red-800 transition font-medium text-sm"
-                                        >
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" />
-                                            </svg>
-                                            Create Material
-                                        </button>
-                                    </div>
-
-                                    <div class="space-y-3">
-                                        <!-- To Do Items (materials with submissions to grade) -->
-                                        <div v-if="classwork.filter(item => item.submitted_count > item.graded_count).length === 0" class="text-center py-8 text-gray-500">
-                                            <svg class="w-12 h-12 mx-auto text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                            </svg>
-                                            <p class="text-sm">All caught up!</p>
-                                            <p class="text-xs mt-1">No pending tasks</p>
-                                        </div>
-
-                                        <div
-                                            v-for="item in classwork.filter(item => item.submitted_count > item.graded_count)"
-                                            :key="item.id"
-                                            class="border border-gray-200 rounded-lg p-3 hover:shadow-md transition cursor-pointer"
-                                            @click="viewClasswork(item)"
-                                        >
-                                            <div class="flex items-start justify-between">
-                                                <div class="flex-1 min-w-0">
-                                                    <h4 class="font-medium text-gray-900 text-sm truncate">{{ item.title }}</h4>
-                                                    <span class="inline-block px-2 py-0.5 text-xs font-medium rounded mt-1" :style="{ backgroundColor: item.color_code + '20', color: item.color_code }">
-                                                        {{ item.type }}
-                                                    </span>
-                                                    <div class="flex items-center gap-2 mt-2">
-                                                        <span class="px-2 py-0.5 bg-red-100 text-red-800 text-xs rounded font-semibold">
-                                                            {{ item.submitted_count - item.graded_count }} to grade
-                                                        </span>
-                                                    </div>
-                                                </div>
-                                                <svg class="w-5 h-5 text-gray-400 flex-shrink-0 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" />
-                                                </svg>
+                        </div>
+                        
+                        <!-- Grade Access Requests Section -->
+                        <div v-if="gradeAccessRequests.length > 0" class="mb-8">
+                            <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+                                <div class="flex items-center gap-3 mb-4">
+                                    <svg class="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                                    </svg>
+                                    <h3 class="text-lg font-bold text-yellow-900">
+                                        Grade Access Requests
+                                        <span class="ml-2 px-2 py-1 bg-yellow-600 text-white text-sm rounded-full">{{ gradeAccessRequests.length }}</span>
+                                    </h3>
+                                </div>
+                                
+                                <div class="space-y-3">
+                                    <div 
+                                        v-for="student in gradeAccessRequests" 
+                                        :key="student.id"
+                                        class="bg-white rounded-lg p-4 border border-yellow-300 flex items-center justify-between"
+                                    >
+                                        <div class="flex items-center gap-3">
+                                            <div class="w-10 h-10 bg-yellow-600 rounded-full flex items-center justify-center text-white font-bold">
+                                                {{ student.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2) }}
+                                            </div>
+                                            <div>
+                                                <p class="font-semibold text-gray-900">{{ student.name }}</p>
+                                                <p class="text-sm text-gray-600">{{ student.email }}</p>
+                                                <p class="text-xs text-gray-500">Requested: {{ student.grade_access_requested_at }}</p>
                                             </div>
                                         </div>
-
-                                        <!-- Upcoming Due Dates -->
-                                        <div class="mt-6 pt-4 border-t border-gray-200">
-                                            <h3 class="text-sm font-semibold text-gray-700 mb-3">Upcoming Due Dates</h3>
-                                            <div v-if="classwork.filter(item => item.due_date).length === 0" class="text-center py-4 text-gray-400 text-xs">
-                                                No upcoming deadlines
-                                            </div>
-                                            <div v-else class="space-y-2">
-                                                <div
-                                                    v-for="item in classwork.filter(item => item.due_date).slice(0, 5)"
-                                                    :key="'due-' + item.id"
-                                                    class="flex items-center justify-between text-xs"
-                                                >
-                                                    <span class="text-gray-700 truncate">{{ item.title }}</span>
-                                                    <span class="text-gray-500 text-xs ml-2 flex-shrink-0">{{ item.due_date_formatted }}</span>
-                                                </div>
-                                            </div>
+                                        <div class="flex gap-2">
+                                            <button
+                                                @click="grantAccess(student.id)"
+                                                class="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition"
+                                            >
+                                                Grant Access
+                                            </button>
+                                            <button
+                                                @click="denyRequest(student.id)"
+                                                class="px-4 py-2 bg-gray-300 hover:bg-gray-400 text-gray-700 rounded-lg text-sm font-medium transition"
+                                            >
+                                                Deny
+                                            </button>
                                         </div>
                                     </div>
                                 </div>
@@ -1272,37 +1555,58 @@ const exportClassStandings = () => {
                                                 :style="{ width: Math.min(student.progress.completion_rate, 100) + '%' }"
                                             ></div>
                                         </div>
-                                        <div class="flex items-center justify-between text-xs text-gray-600">
-                                            <span>{{ student.progress.submitted }}/{{ student.progress.total_classwork }} submitted</span>
-                                            <span>{{ student.progress.graded }} graded</span>
+                                        <div class="grid grid-cols-2 gap-2 text-xs">
+                                            <div class="bg-blue-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Submitted</div>
+                                                <div class="font-bold text-blue-700 text-base">{{ student.progress.submitted }}<span class="text-gray-400 text-xs">/{{ student.progress.total_classwork }}</span></div>
+                                            </div>
+                                            <div class="bg-green-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Graded</div>
+                                                <div class="font-bold text-green-700 text-base">{{ student.progress.graded }}<span class="text-gray-400 text-xs">/{{ student.progress.total_classwork }}</span></div>
+                                            </div>
+                                            <div class="bg-yellow-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Pending</div>
+                                                <div class="font-bold text-yellow-700 text-base">{{ student.progress.pending || 0 }}</div>
+                                            </div>
+                                            <div class="bg-red-50 rounded px-2 py-1 text-center">
+                                                <div class="text-gray-600 text-[10px] uppercase">Missing</div>
+                                                <div class="font-bold text-red-700 text-base">{{ student.progress.not_submitted || 0 }}</div>
+                                            </div>
                                         </div>
-                                        <div class="flex items-center justify-between text-xs mt-1">
-                                            <span class="text-yellow-600">{{ student.progress.pending || 0 }} pending</span>
-                                            <span class="text-red-600">{{ student.progress.not_submitted || 0 }} not submitted</span>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Average Grade -->
-                                    <div v-if="student.progress.average_grade !== null" class="bg-green-50 rounded-lg p-2 mb-3">
-                                        <div class="flex items-center justify-between">
-                                            <span class="text-xs font-medium text-gray-700">Average Grade</span>
-                                            <span class="text-lg font-bold text-green-700">{{ student.progress.average_grade }}</span>
-                                        </div>
-                                    </div>
-                                    <div v-else class="bg-gray-50 rounded-lg p-2 mb-3">
-                                        <div class="text-xs text-center text-gray-500">No grades yet</div>
                                     </div>
                                     
                                     <!-- View Performance Button -->
                                     <button 
                                         @click="viewStudentPerformance(student)"
-                                        class="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                                        class="w-full px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 transition flex items-center justify-center gap-2 mb-2"
                                     >
                                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                                         </svg>
                                         View Performance
                                     </button>
+                                    
+                                    <!-- Grade Access Control -->
+                                    <div class="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-200">
+                                        <div class="flex items-center gap-2">
+                                            <svg class="w-4 h-4 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                                            </svg>
+                                            <span class="text-xs font-medium text-gray-700">Grade Visibility</span>
+                                        </div>
+                                        <button
+                                            @click="student.grade_access_granted ? revokeAccess(student.id) : grantAccess(student.id)"
+                                            :class="[
+                                                'px-3 py-1 rounded text-xs font-semibold transition',
+                                                student.grade_access_granted
+                                                    ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                                                    : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                            ]"
+                                        >
+                                            {{ student.grade_access_granted ? 'Visible' : 'Hidden' }}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -1314,7 +1618,8 @@ const exportClassStandings = () => {
                             :course="course"
                             :students="students"
                             :classworks="classworks"
-                            :gradebook="course.gradebook"
+                            :gradebook="gradebook.value"
+                            @gradebook-updated="(updatedGradebook) => gradebook.value = updatedGradebook"
                         />
                     </div>
 
@@ -1382,7 +1687,7 @@ const exportClassStandings = () => {
                                     </thead>
                                     <tbody>
                                         <tr 
-                                            v-for="student in students" 
+                                            v-for="student in course.students" 
                                             :key="student.id"
                                             class="hover:bg-gray-50 border-b"
                                         >
@@ -1393,30 +1698,30 @@ const exportClassStandings = () => {
                                             
                                             <!-- Program -->
                                             <td class="px-6 py-4 text-center text-gray-700 border border-gray-300">
-                                                {{ student.program || 'N/A' }}
+                                                {{ student.program || course.program?.name || 'N/A' }}
                                             </td>
                                             
                                             <!-- Midterm Grade -->
                                             <td class="px-6 py-4 text-center font-semibold border border-gray-300"
-                                                :class="getMidtermGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
-                                                {{ getMidtermGrade(student.id).toFixed(2) }}
+                                                :class="convertToGradingScale(getMidtermGrade(student.id)) !== '-' && convertToGradingScale(getMidtermGrade(student.id)) <= passingGrade ? 'text-green-600' : convertToGradingScale(getMidtermGrade(student.id)) === '-' ? 'text-gray-500' : 'text-red-600'">
+                                                {{ convertToGradingScale(getMidtermGrade(student.id)) !== '-' ? convertToGradingScale(getMidtermGrade(student.id)).toFixed(2) : '-' }}
                                             </td>
                                             
                                             <!-- Final Grade -->
                                             <td class="px-6 py-4 text-center font-semibold border border-gray-300"
-                                                :class="getFinalsGrade(student.id) <= passingGrade.value ? 'text-green-600' : 'text-red-600'">
-                                                {{ getFinalsGrade(student.id).toFixed(2) }}
+                                                :class="convertToGradingScale(getFinalsGrade(student.id)) !== '-' && convertToGradingScale(getFinalsGrade(student.id)) <= passingGrade ? 'text-green-600' : convertToGradingScale(getFinalsGrade(student.id)) === '-' ? 'text-gray-500' : 'text-red-600'">
+                                                {{ convertToGradingScale(getFinalsGrade(student.id)) !== '-' ? convertToGradingScale(getFinalsGrade(student.id)).toFixed(2) : '-' }}
                                             </td>
                                             
                                             <!-- Remarks -->
                                             <td class="px-6 py-4 text-center font-bold border border-gray-300"
-                                                :class="getClassRecordRemarkClass(getFinalGrade(student.id))">
-                                                {{ getClassRecordRemark(getFinalGrade(student.id)) }}
+                                                :class="getClassRecordRemarkClass(getFinalConvertedGrade(student.id))">
+                                                {{ getClassRecordRemark(getFinalConvertedGrade(student.id)) }}
                                             </td>
                                         </tr>
                                         
                                         <!-- Empty State -->
-                                        <tr v-if="students.length === 0">
+                                        <tr v-if="course.students.length === 0">
                                             <td colspan="5" class="px-6 py-12 text-center text-gray-500">
                                                 <svg class="w-16 h-16 mx-auto text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
@@ -1453,8 +1758,10 @@ const exportClassStandings = () => {
                                         Final Grades PDF
                                     </button>
                                     <button
-                                        @click="exportCoursePerformance"
-                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition font-medium"
+                                        type="button"
+                                        disabled
+                                        aria-disabled="true"
+                                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg shadow-sm transition font-medium opacity-50 cursor-not-allowed pointer-events-none"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
@@ -1462,8 +1769,10 @@ const exportClassStandings = () => {
                                         Course Performance PDF
                                     </button>
                                     <button
-                                        @click="exportClassStandings"
-                                        class="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-sm transition font-medium"
+                                        type="button"
+                                        disabled
+                                        aria-disabled="true"
+                                        class="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg shadow-sm transition font-medium opacity-50 cursor-not-allowed pointer-events-none"
                                     >
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
@@ -1480,11 +1789,11 @@ const exportClassStandings = () => {
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div class="flex items-center gap-2">
                                     <div class="w-3 h-3 rounded-full bg-green-500"></div>
-                                    <span class="text-sm">{{ programType.value === 'masteral' ? '1.75 and below: Passed' : '1.45 and below: Passed' }}</span>
+                                    <span class="text-sm">{{ passingGrade }} and below: Passed</span>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <div class="w-3 h-3 rounded-full bg-red-500"></div>
-                                    <span class="text-sm">Above {{ programType.value === 'masteral' ? '1.75' : '1.45' }}: Failed/Retake</span>
+                                    <span class="text-sm">Above {{ passingGrade }}: Failed/Retake</span>
                                 </div>
                             </div>
                         </div>

@@ -75,8 +75,11 @@ const saveTemplate = () => {
             units: formData.value.units,
             status: formData.value.status
         }, {
+            preserveScroll: true,
             onSuccess: () => {
                 closeModal();
+                // Reload the page data to show updated template
+                router.reload({ only: ['templates'] });
             }
         });
     } else {
@@ -87,8 +90,11 @@ const saveTemplate = () => {
             units: formData.value.units,
             status: formData.value.status
         }, {
+            preserveScroll: true,
             onSuccess: () => {
                 closeModal();
+                // Reload the page data to show new template
+                router.reload({ only: ['templates'] });
             }
         });
     }
@@ -102,9 +108,12 @@ const confirmDelete = (template) => {
 const deleteTemplate = () => {
     if (templateToDelete.value) {
         router.delete(route('admin.course-templates.destroy', templateToDelete.value.id), {
+            preserveScroll: true,
             onSuccess: () => {
                 showDeleteConfirm.value = false;
                 templateToDelete.value = null;
+                // Reload the page data to remove deleted template
+                router.reload({ only: ['templates'] });
             }
         });
     }

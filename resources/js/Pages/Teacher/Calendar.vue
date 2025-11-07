@@ -6,6 +6,8 @@ import FullCalendar from '@fullcalendar/vue3';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
 
 // Props
 const props = defineProps({
@@ -19,10 +21,15 @@ const props = defineProps({
     }
 });
 
+// Offline composables
+const { isOnline } = useOfflineSync();
+const { createEventOffline, cacheEvents, getCachedEvents } = useTeacherOffline();
+
 // Page props for flash messages
 const page = usePage();
 const showSuccessMessage = ref(false);
 const successMessage = ref('');
+const isFromCache = ref(false);
 
 // Watch for flash messages
 watch(() => page.props.flash, (flash) => {
@@ -145,7 +152,20 @@ const updateCalendarEvents = () => {
     });
 };
 
-onMounted(() => {
+onMounted(async () => {
+    // Cache events when online
+    if (isOnline.value && props.events?.length > 0) {
+        await cacheEvents(props.events);
+        isFromCache.value = false;
+    } else if (!isOnline.value) {
+        // Load from cache when offline
+        const cached = await getCachedEvents();
+        if (cached && cached.length > 0) {
+            localEvents.value = cached;
+            isFromCache.value = true;
+        }
+    }
+    
     updateCalendarEvents();
 });
 
@@ -248,7 +268,7 @@ function openCreateModal() {
 }
 
 // Save event
-function saveEvent() {
+async function saveEvent() {
     if (!form.value.title || !form.value.date || !form.value.description) {
         alert('Please fill in all required fields');
         return;
@@ -273,12 +293,56 @@ function saveEvent() {
         course_id: form.value.target_audience === 'students' ? form.value.course_id : null,
     };
 
+    // Handle offline mode
+    if (!isOnline.value) {
+        if (isEditing.value && currentEvent.value) {
+            // Update event offline
+            await createEventOffline({
+                ...eventData,
+                id: currentEvent.value.id,
+                _method: 'PUT'
+            });
+            
+            // Update local event
+            const index = localEvents.value.findIndex(e => e.id === currentEvent.value.id);
+            if (index !== -1) {
+                localEvents.value[index] = { ...localEvents.value[index], ...eventData };
+                updateCalendarEvents();
+            }
+        } else {
+            // Create event offline
+            const tempId = 'temp_' + Date.now();
+            await createEventOffline({ ...eventData, id: tempId });
+            
+            // Add to local events
+            localEvents.value.unshift({
+                id: tempId,
+                ...eventData,
+                is_own: true,
+                created_by: 'You'
+            });
+            updateCalendarEvents();
+        }
+        
+        processing.value = false;
+        closeModal();
+        successMessage.value = isEditing.value 
+            ? '✓ Event updated offline. Will sync when online.' 
+            : '✓ Event created offline. Will sync when online.';
+        showSuccessMessage.value = true;
+        setTimeout(() => showSuccessMessage.value = false, 5000);
+        return;
+    }
+
+    // Online mode - normal behavior
     if (isEditing.value && currentEvent.value) {
         router.put(route('teacher.calendar.update', currentEvent.value.id), eventData, {
             preserveScroll: true,
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to show updated event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;
@@ -291,6 +355,8 @@ function saveEvent() {
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to show new event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;
@@ -309,6 +375,8 @@ function deleteEvent(eventId) {
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
+                // Reload the page data to remove deleted event
+                router.reload({ only: ['events'] });
             },
             onError: () => {
                 processing.value = false;
@@ -363,6 +431,19 @@ const formatTime = (timeString) => {
 
     <TeacherLayout>
         <div class="space-y-6">
+            <!-- Cache Indicator -->
+            <div 
+                v-if="isFromCache"
+                class="bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md"
+            >
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-yellow-800 font-medium">📌 Viewing Cached Events (Offline Mode)</p>
+                </div>
+            </div>
+
             <!-- Success Message -->
             <div 
                 v-if="showSuccessMessage"

@@ -27,7 +27,10 @@ const selectedCourse = computed(() => props.courses?.find(c => c.id == selectedC
 
 const fetchData = async () => {
   if (!selectedCourseId.value) return;
-  loading.value = true; errorMsg.value = '';
+  
+  loading.value = true; 
+  errorMsg.value = '';
+  
   try {
     const res = await axios.get('/teacher/reports/data', {
       params: {
@@ -97,6 +100,7 @@ const exportReport = async (format) => {
   <TeacherLayout>
     <Head title="Reports" />
     <div class="space-y-6">
+    
     <!-- Header / Filters -->
     <div class="bg-white rounded-lg shadow p-6 flex flex-col md:flex-row gap-6 items-center justify-between border border-gray-100">
       <div class="flex items-center gap-3 w-full md:w-auto">

@@ -1,8 +1,10 @@
 <script setup>
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { Head, router } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
 import axios from 'axios';
+import { useOfflineSync } from '@/composables/useOfflineSync';
+import { useTeacherOffline } from '@/composables/useTeacherOffline';
 
 const props = defineProps({
     courses: {
@@ -19,10 +21,19 @@ const props = defineProps({
     }
 });
 
+// Offline composables
+const { isOnline } = useOfflineSync();
+const { createCourseOffline, cacheCourses, getCachedCourses } = useTeacherOffline();
+
 const showCreateModal = ref(false);
 const selectedProgram = ref('');
 const courseTemplates = ref([]);
 const loadingTemplates = ref(false);
+const isFromCache = ref(false);
+const localCourses = ref([...props.courses]);
+
+// Auto-refresh interval
+let refreshInterval = null;
 
 const formData = ref({
     academic_year_id: '',
@@ -88,23 +99,88 @@ const closeModal = () => {
     showCreateModal.value = false;
 };
 
-const createCourse = () => {
-    router.post(route('teacher.courses.store'), {
+const createCourse = async () => {
+    const courseData = {
         academic_year_id: formData.value.academic_year_id,
         program_id: formData.value.program_id,
         course_template_id: formData.value.course_template_id,
         section: formData.value.section,
-        description: formData.value.description
-    }, {
+        description: formData.value.description,
+        title: formData.value.title,
+        units: formData.value.units
+    };
+
+    // Handle offline mode
+    if (!isOnline.value) {
+        const tempId = 'temp_' + Date.now();
+        await createCourseOffline({ ...courseData, id: tempId });
+        
+        // Add to local courses
+        localCourses.value.unshift({
+            id: tempId,
+            ...courseData,
+            status: 'pending'
+        });
+        
+        closeModal();
+        alert('✓ Course created offline. Will sync when online.');
+        return;
+    }
+
+    // Online mode
+    router.post(route('teacher.courses.store'), courseData, {
+        preserveScroll: true,
         onSuccess: () => {
             closeModal();
+            // Reload the page data to show the new course
+            router.reload({ only: ['courses'] });
         }
     });
 };
 
+onMounted(async () => {
+    // Cache courses when online
+    if (isOnline.value && props.courses?.length > 0) {
+        await cacheCourses(props.courses);
+        isFromCache.value = false;
+    } else if (!isOnline.value) {
+        // Load from cache when offline
+        const cached = await getCachedCourses();
+        if (cached && cached.length > 0) {
+            localCourses.value = cached;
+            isFromCache.value = true;
+        }
+    }
+    
+    // Set up auto-refresh every 10 seconds to check for admin changes
+    refreshInterval = setInterval(() => {
+        // Only refresh if user is online and not in a modal
+        if (isOnline.value && !showCreateModal.value) {
+            router.reload({ 
+                only: ['courses'],
+                preserveScroll: true,
+                preserveState: true,
+            });
+        }
+    }, 10000); // Refresh every 10 seconds
+});
+
+onUnmounted(() => {
+    // Clean up the interval when component is destroyed
+    if (refreshInterval) {
+        clearInterval(refreshInterval);
+    }
+});
+
 const deleteCourse = (courseId) => {
     if (confirm('Are you sure you want to delete this course? This action cannot be undone.')) {
-        router.delete(route('teacher.courses.destroy', courseId));
+        router.delete(route('teacher.courses.destroy', courseId), {
+            preserveScroll: true,
+            onSuccess: () => {
+                // Reload the page data to update the course list
+                router.reload({ only: ['courses'] });
+            }
+        });
     }
 };
 </script>
@@ -130,10 +206,23 @@ const deleteCourse = (courseId) => {
                 </button>
             </div>
 
+            <!-- Cache Indicator -->
+            <div 
+                v-if="isFromCache"
+                class="mb-6 bg-yellow-50 border-l-4 border-yellow-500 p-4 rounded-lg shadow-md"
+            >
+                <div class="flex items-center">
+                    <svg class="w-6 h-6 text-yellow-600 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    <p class="text-yellow-800 font-medium">📚 Viewing Cached Courses (Offline Mode)</p>
+                </div>
+            </div>
+
             <!-- Courses Grid -->
-            <div v-if="courses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div v-if="localCourses.length > 0" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 <div
-                    v-for="course in courses"
+                    v-for="course in localCourses"
                     :key="course.id"
                     class="bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow overflow-hidden"
                 >
@@ -149,8 +238,10 @@ const deleteCourse = (courseId) => {
                             <span 
                                 class="px-2 py-1 text-xs font-semibold rounded-full"
                                 :class="{
-                                    'bg-green-100 text-green-800': course.status === 'active',
-                                    'bg-red-100 text-red-800': course.status === 'archived'
+                                    'bg-yellow-100 text-yellow-800': course.status === 'Pending',
+                                    'bg-green-100 text-green-800': course.status === 'Active',
+                                    'bg-red-100 text-red-800': course.status === 'Archived',
+                                    'bg-gray-100 text-gray-800': course.status === 'Inactive'
                                 }"
                             >
                                 {{ course.status }}

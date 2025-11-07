@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, Link, router, useForm } from '@inertiajs/vue3';
 import TeacherLayout from '@/Layouts/TeacherLayout.vue';
+import { useOfflineSync } from '@/composables/useOfflineSync';
 
 const props = defineProps({
     course: Object,
@@ -25,6 +26,9 @@ const gradingForm = useForm({
     question_scores: {}, // Store manual scores for each question
     status: 'graded',
 });
+
+// Offline sync utilities
+const { saveOfflineAction, updatePendingCount } = useOfflineSync();
 
 const submittedCount = computed(() => {
     return props.submissions.filter(s => s.status === 'submitted' || s.status === 'graded').length;
@@ -203,9 +207,52 @@ const validateGradeInput = () => {
     }
 };
 
-const submitGrade = () => {
+const submitGrade = async () => {
     if (!selectedSubmission.value) return;
     
+    // Check if online
+    const isOnline = navigator.onLine;
+    
+    if (!isOnline) {
+        // Queue grade for offline sync
+        const payload = {
+            course_id: props.course.id,
+            classwork_id: props.classwork.id,
+            submission_id: selectedSubmission.value.id,
+            grade: gradingForm.grade,
+            feedback: gradingForm.feedback,
+            rubric_scores: gradingForm.rubric_scores,
+            question_scores: gradingForm.question_scores,
+            status: gradingForm.status,
+        };
+        
+        // Construct the correct endpoint URL
+        const endpoint = route('teacher.courses.classwork.submissions.grade', {
+            course: props.course.id,
+            classwork: props.classwork.id,
+            submission: selectedSubmission.value.id
+        });
+        
+        try {
+            await saveOfflineAction('grade_submission', payload, endpoint);
+            // Update local UI immediately
+            const submissionIndex = props.submissions.findIndex(s => s.id === selectedSubmission.value.id);
+            if (submissionIndex !== -1) {
+                props.submissions[submissionIndex].grade = gradingForm.grade;
+                props.submissions[submissionIndex].feedback = gradingForm.feedback;
+                props.submissions[submissionIndex].status = 'graded';
+            }
+            closeGradingModal();
+            alert('Grade saved offline. It will sync automatically when you are online.');
+            await updatePendingCount();
+        } catch (err) {
+            console.error('Failed to save grade offline:', err);
+            alert('Failed to save grade offline. Please try again.');
+        }
+        return;
+    }
+    
+    // Online: submit immediately
     gradingForm.post(route('teacher.courses.classwork.submissions.grade', {
         course: props.course.id,
         classwork: props.classwork.id,

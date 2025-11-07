@@ -93,11 +93,12 @@ const saveUser = () => {
     if (isEditing.value) {
         router.put(route('admin.users.update', currentUser.value.id), form.value, {
             preserveScroll: true,
-            preserveState: true,
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
                 alert('User updated successfully!');
+                // Reload the page data to show updated user
+                router.reload({ only: ['users'] });
             },
             onError: (errors) => {
                 processing.value = false;
@@ -117,11 +118,12 @@ const saveUser = () => {
     } else {
         router.post(route('admin.users.store'), form.value, {
             preserveScroll: true,
-            preserveState: true,
             onSuccess: () => {
                 closeModal();
                 processing.value = false;
                 alert('User created successfully!');
+                // Reload the page data to show new user
+                router.reload({ only: ['users'] });
             },
             onError: (errors) => {
                 processing.value = false;
@@ -152,6 +154,8 @@ const deleteUser = (userId, userName) => {
             preserveScroll: true,
             onSuccess: () => {
                 processing.value = false;
+                // Reload the page data to remove deleted user
+                router.reload({ only: ['users'] });
             },
             onError: () => {
                 processing.value = false;
