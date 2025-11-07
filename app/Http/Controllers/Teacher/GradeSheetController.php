@@ -10,7 +10,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 class GradeSheetController extends Controller
 {
     // View the PDF in an iframe
-    public function viewPdf(Course $course)
+    public function viewPdf(Request $request, Course $course)
     {
         $user = auth()->user();
         $isOwner = $course->teacher_id === $user->id;
@@ -18,6 +18,9 @@ class GradeSheetController extends Controller
         if (!$isOwner && !$isAssigned) {
             abort(403, 'Unauthorized access to this course.');
         }
+
+        // Get semester from request (default to "Second Semester" if not provided)
+        $semester = $request->input('semester', 'Second Semester');
 
         // Load program relationship first
         $course->load('program');
@@ -76,16 +79,21 @@ class GradeSheetController extends Controller
 
         $course->load(['teacher', 'academicYear', 'program']);
 
+        // Get program name for display in Course column
+        $programName = $course->program ? $course->program->name : 'N/A';
+
         $pdf = Pdf::loadView('pdf.grade-sheet', [
             'course' => $course,
             'students' => $studentsWithGrades,
+            'semester' => $semester,
+            'programName' => $programName,
         ]);
-        $pdf->setPaper('a4', 'landscape');
+        $pdf->setPaper('a4', 'portrait');
         return $pdf->stream('GradeSheet_' . str_replace(' ', '_', $course->title) . '.pdf');
     }
 
     // Download the PDF
-    public function downloadPdf(Course $course)
+    public function downloadPdf(Request $request, Course $course)
     {
         $user = auth()->user();
         $isOwner = $course->teacher_id === $user->id;
@@ -93,6 +101,9 @@ class GradeSheetController extends Controller
         if (!$isOwner && !$isAssigned) {
             abort(403, 'Unauthorized access to this course.');
         }
+
+        // Get semester from request (default to "Second Semester" if not provided)
+        $semester = $request->input('semester', 'Second Semester');
 
         // Load program relationship first
         $course->load('program');
@@ -151,11 +162,16 @@ class GradeSheetController extends Controller
 
         $course->load(['teacher', 'academicYear', 'program']);
 
+        // Get program name for display in Course column
+        $programName = $course->program ? $course->program->name : 'N/A';
+
         $pdf = Pdf::loadView('pdf.grade-sheet', [
             'course' => $course,
             'students' => $studentsWithGrades,
+            'semester' => $semester,
+            'programName' => $programName,
         ]);
-        $pdf->setPaper('a4', 'landscape');
+        $pdf->setPaper('a4', 'portrait');
         $filename = 'GradeSheet_' . str_replace(' ', '_', $course->title) . '_' . date('Y-m-d') . '.pdf';
         return $pdf->download($filename);
     }

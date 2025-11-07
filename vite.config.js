@@ -38,7 +38,11 @@ export default defineConfig({
             srcDir: 'resources/js',
             filename: 'sw.js',
             strategies: 'injectManifest',
-            injectManifest: { rollupFormat: 'iife' },
+            injectManifest: {
+                rollupFormat: 'iife',
+                globPatterns: ['**/*.{js,css,html,ico,png,jpg,svg}']
+            },
+            outDir: 'public',
             manifest: {
                 name: 'ElevateGS Learning Management System',
                 short_name: 'ElevateGS',
